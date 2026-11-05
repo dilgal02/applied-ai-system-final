@@ -1,0 +1,67 @@
+flowchart LR
+    %% Architecture of Game Glitch Investigator (Streamlit number guessing game)
+    %% Render: paste into https://mermaid.live or run mmdc -i diagrams/architecture.mmd -o diagrams/architecture.png
+
+    player(["Player<br/>(web browser)"])
+
+    subgraph ui["app.py — Streamlit UI (reruns top to bottom on every click)"]
+        direction TB
+        sidebar["Sidebar<br/>• Difficulty select<br/>• Range and attempts allowed"]
+        history["Sidebar: Guess History<br/>show_history()"]
+        inputs["Main area inputs<br/>• Guess text box<br/>• Submit Guess / New Game buttons<br/>• Show hint checkbox"]
+        handler["Submit handler<br/>(if submit: block)"]
+        feedback["Feedback<br/>• Attempts left<br/>• Colored hint box (HINT_BOX)<br/>• Win / out-of-attempts message<br/>• Game summary table: show_summary()"]
+        debug["Developer Debug Info<br/>(expander)"]
+    end
+
+    subgraph sess["st.session_state (survives reruns)"]
+        s_vals["secret · attempts · score · status<br/>history · rounds"]
+    end
+
+    subgraph logic["logic_utils.py — game logic (pure functions)"]
+        direction TB
+        f_range["get_range_for_difficulty()"]
+        f_parse["parse_guess()"]
+        f_check["check_guess()"]
+        f_close["get_closeness()"]
+        f_score["update_score()"]
+        f_fmt["format_history_line()"]
+    end
+
+    subgraph tests["tests/test_game_logic.py — pytest (11 tests)"]
+        t_all["Unit and edge-case tests"]
+    end
+
+    %% Player input
+    player -->|"picks difficulty"| sidebar
+    player -->|"types guess, clicks buttons"| inputs
+
+    %% Setup on page load
+    sidebar -->|"difficulty → (low, high)"| f_range
+    f_range -->|"random secret on first load"| s_vals
+
+    %% New Game
+    inputs -->|"New Game: attempts = 0,<br/>new secret, rounds cleared"| s_vals
+
+    %% Submit flow
+    inputs -->|"Submit + raw text"| handler
+    handler -->|"1. raw text → (ok, guess, error)"| f_parse
+    handler -->|"2. guess, secret → (outcome, hint)"| f_check
+    handler -->|"3. guess, secret → closeness"| f_close
+    handler -->|"4. score, outcome, attempt → new score"| f_score
+    handler <-->|"read / write attempts, score,<br/>status, history, rounds"| s_vals
+    handler -->|"hint, closeness, result"| feedback
+
+    %% Displays that read state
+    s_vals -->|"rounds"| history
+    history -->|"one line per round"| f_fmt
+    s_vals -.->|"shown for debugging"| debug
+
+    %% Output back to the player
+    feedback -->|"rendered page"| player
+    history -->|"rendered page"| player
+
+    %% Tests
+    t_all -.->|"tests"| f_check
+    t_all -.->|"tests"| f_parse
+    t_all -.->|"tests"| f_fmt
