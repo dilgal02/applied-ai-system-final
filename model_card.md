@@ -4,10 +4,13 @@
 |------|---------|
 | System | Number Duel, a Streamlit app with a Solo Game and a Number Duel page |
 | Opponent | Vector, a deterministic binary-search algorithm (`bot_agent.py`) |
-| Machine learning | None: no training, no trained model, no language model, no external AI API, no RAG |
+| Machine learning in the game | None: Vector is a plain algorithm, and the game uses no model |
+| Separate local model | Qwen/Qwen3-0.6B, a small pretrained language model (pinned revision `c1899de`), run on the CPU by a separate CLI (`coach_model.py`); not connected to the game |
+| Separate retrieval | BM25 keyword search over 22 sections of `knowledge/*.md` (`coach_retrieval.py`); not connected to the model or the game |
+| Not used | No training or fine-tuning, no external AI inference API, no full RAG pipeline, no Coach in the interface |
 | Advanced feature | A built-in reliability system that checks every duel step before it is saved |
-| Tested environment | Python 3.13.15, Streamlit 1.60.0 |
-| Last confirmed results | 119 automated tests passed; 6 of 6 evaluation scenarios passed |
+| Tested environment | Python 3.13.15, Streamlit 1.60.0; coach tools on macOS arm64 with torch 2.15.0 and transformers 5.23.0, CPU only |
+| Last confirmed results | 143 automated tests passed; 6 of 6 evaluation scenarios passed |
 
 ## Purpose and intended use
 
@@ -37,13 +40,21 @@ any decision about real people.
 
 The Solo game does not go through the inspector.
 
-## No training and no language model
+Two separate command-line tools, a local language model and a knowledge
+search, are described below. They are not part of the game flow.
 
-Nothing in this system is trained or learned from data. Vector does not
-"think": `choose_guess` returns the middle of the numbers that are still
-possible, and `update_bounds` narrows that range after each hint. The same
-inputs always give the same moves. The project does not call any external
-AI API and does not use a language model or retrieval (RAG).
+## No training; where a language model is used
+
+Nothing in this project is trained or fine-tuned. Vector does not "think":
+`choose_guess` returns the middle of the numbers that are still possible,
+and `update_bounds` narrows that range after each hint. The same inputs
+always give the same moves. The game does not use a language model.
+
+A separate command-line tool, `coach_model.py`, downloads a small
+pretrained language model (Qwen3-0.6B) and runs it locally on the CPU. The
+game does not call it. The knowledge search exists as another separate
+tool and is not connected to the model yet, so there is no full RAG
+pipeline. The project does not call any external AI inference API.
 
 ## Algorithmic limits and how predictable Vector is
 
@@ -86,8 +97,47 @@ Limits:
 - the scenarios test the game core, not the browser page;
 - the tests and the evaluation were written with help from the same AI
   agent that helped write the code, so they may share blind spots with it;
-- the 119 passing tests and the 6 passing scenarios are separate measures.
+- the 143 passing tests and the 6 passing scenarios are separate measures.
   Neither proves that the app has no bugs.
+
+## Local language model (separate CLI)
+
+`coach_model.py` prepares a local backend for a future Strategy Coach.
+
+- **Model:** Qwen/Qwen3-0.6B (Apache-2.0 license), a small pretrained
+  model, pinned to revision `c1899de289a04d12100db370d81485cdf75e47ca`.
+- **Download:** `python coach_model.py download` is the only step that
+  needs the network. It saves about 1.5 GB to `models/Qwen3-0.6B`, which
+  Git ignores.
+- **Generation:** `python coach_model.py smoke` reads only local files and
+  runs on the CPU in float32, with `model.eval()`, `torch.inference_mode()`,
+  thinking turned off, greedy decoding and at most 64 new tokens by
+  default.
+- **Saved check:** [artifacts/local_model_smoke.json](artifacts/local_model_smoke.json),
+  made with `HF_HUB_OFFLINE=1`. Asked to explain binary search, the model
+  answered: "Binary search is a method of finding a target value in a
+  sorted list by repeatedly dividing the search interval in half."
+
+Limits: the model is small and can give wrong or incomplete answers. The
+smoke check only shows that the model runs locally and answers in short
+English; it does not check that answers are correct. Only macOS 26.6.1 on
+arm64 was verified; Windows and Linux are not verified yet. The model is
+not connected to the game or to the knowledge search.
+
+## Knowledge retrieval (separate CLI)
+
+`coach_retrieval.py` searches the game's own knowledge files:
+`knowledge/rules.md`, `knowledge/strategy.md` and
+`knowledge/reliability.md`, 22 sections with stable source IDs. It builds a
+small BM25 index with the Python standard library and returns the best
+sections with their source ID, path, score and text.
+
+The score shows how well the words of a question match a section. It is
+not the confidence of a model. Limits: the search matches words, not
+meaning, so a question worded differently can miss the right section. The
+knowledge files were written by hand from the current code and must be
+updated when the rules change. The search is not connected to the model,
+the app or the game engine yet.
 
 ## State, data and privacy
 
@@ -101,6 +151,9 @@ Limits:
   was removed.
 - The logs contain only the event, the round number, the stage and the
   final status, never secrets or full states.
+- The local model runs on the user's own machine, so prompts are not sent
+  to any server. Only `coach_model.py download` contacts the Hugging Face
+  Hub, to fetch the model files.
 
 ## Possible misuse and safeguards
 
@@ -111,6 +164,7 @@ Limits:
 | Bad input (empty, text, fractions, numbers out of range) | The page shows a clear message and the round is not used up | — |
 | A broken or changed engine result (wrong hint, changed secret or setting, extra round, false status) | The inspector rejects it, the player sees a general message, the old state is kept | It does not protect against someone who changes both the engine and the inspector |
 | Trusting Vector as "AI" | The README and this card state that Vector is a plain algorithm | — |
+| Trusting the local model's answers | The model is not connected to the game, so it cannot change any game state; its limits are documented | It does not check whether an answer is correct |
 
 ## Testing: what surprised me
 

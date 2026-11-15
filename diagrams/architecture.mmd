@@ -1,6 +1,9 @@
 flowchart TD
     %% Number Duel: architecture of the actual implementation.
     %% README.md shows the same diagram so GitHub can render it.
+    %% The local model and the retrieval tools are separate command-line
+    %% tools. They are not connected to each other, to the app or to the
+    %% game engine yet.
 
     player(["Player<br/>(web browser)"])
     app["app.py<br/>set_page_config + st.navigation"]
@@ -17,14 +20,13 @@ flowchart TD
 
     subgraph core["Game core (plain Python, no Streamlit)"]
         logic["logic_utils.py<br/>parse_guess, check_guess,<br/>get_closeness, update_score"]
-        service["duel_service.safe_play_round"]
-        engine["duel_logic.play_round<br/>(engine)"]
+        service["duel_service.safe_play_round<br/>logs accepted / rejected rounds"]
+        engine["duel_logic.py (engine)<br/>create_duel, play_round"]
         bot["bot_agent.py<br/>choose_guess, update_bounds"]
-        candidate["candidate DuelState"]
         inspector["guardrails.validate_transition<br/>(independent checks)"]
     end
 
-    rejected["Round not accepted<br/>error message, WARNING log<br/>for engine and guardrail;<br/>old duel_state kept"]
+    rejected["Round not accepted<br/>message on the page;<br/>old duel_state kept"]
 
     player --> app
     app --> solo
@@ -33,19 +35,20 @@ flowchart TD
     solo --> logic
     solo <--> solo_state
 
+    duel -->|"Start Duel: create_duel"| engine
     duel -->|"empty, text, fraction<br/>or out of range"| rejected
     duel -->|"valid whole number"| service
-    service --> engine
-    engine -->|"hints"| logic
+    service -->|"1. play_round"| engine
+    engine -->|"check_guess for hints"| logic
     engine -->|"bounds and outcome,<br/>no secret number"| bot
     bot -->|"next guess, new bounds"| engine
-    engine --> candidate
-    engine -->|"ValueError"| rejected
-    candidate --> inspector
-    inspector -->|"accepted"| service
-    service -->|"accepted state"| duel
+    engine -->|"candidate DuelState,<br/>or ValueError for bad input"| service
+    service -->|"2. validate_transition<br/>(old state, candidate)"| inspector
+    inspector -->|"ValueError if a rule is broken"| service
+    service -->|"accepted: candidate"| duel
+    service -->|"engine ValueError passed on;<br/>inspector ValueError becomes<br/>GuardrailViolation"| duel
     duel -->|"save"| duel_state
-    inspector -->|"GuardrailViolation"| rejected
+    duel -->|"GuardrailViolation: general message;<br/>engine ValueError: its message"| rejected
 
     subgraph evaluation["Evaluation (no Streamlit, no server)"]
         evaluate["evaluate.py<br/>6 fixed scenarios"]
@@ -53,11 +56,40 @@ flowchart TD
         fault["mock.patch fault injection<br/>(evaluation only)"]
     end
 
-    evaluate --> service
+    evaluate -->|"safe_play_round"| service
+    evaluate -->|"create_duel; play_round<br/>to build the injected fault"| engine
     evaluate --> report
     fault -.->|"replaces play_round<br/>in guardrail-blocked"| service
+
+    subgraph model_tool["Local model CLI (coach_model.py, separate)"]
+        download_cmd["coach_model.py download"]
+        hub[("Hugging Face Hub<br/>Qwen/Qwen3-0.6B<br/>pinned revision c1899de")]
+        weights[("models/Qwen3-0.6B<br/>local weights, git-ignored")]
+        smoke_cmd["coach_model.py smoke<br/>prompt + local weights"]
+        cpu["Transformers + PyTorch<br/>CPU generation, thinking off,<br/>limited answer length"]
+        answer["answer on screen<br/>+ optional JSON report"]
+    end
+
+    download_cmd -->|"network needed only here"| hub
+    hub -->|"snapshot_download"| weights
+    smoke_cmd --> cpu
+    weights -->|"local files only, no network"| cpu
+    cpu --> answer
+
+    subgraph retrieval_tool["Knowledge search CLI (coach_retrieval.py, separate)"]
+        knowledge[("knowledge/*.md<br/>rules, strategy, reliability<br/>22 sections with source_id")]
+        bm25["BM25 index<br/>(Python standard library)"]
+        query_cmd["coach_retrieval.py<br/>--query --top-k"]
+        found["found sections:<br/>source_id, path, score, text<br/>score = word match,<br/>not model confidence"]
+    end
+
+    knowledge -->|"one entry per section"| bm25
+    query_cmd -->|"search"| bm25
+    bm25 --> found
 
     tests["tests/ (pytest)"]
     tests -.->|"unit tests"| core
     tests -.->|"AppTest UI tests"| pages
     tests -.->|"CLI test"| evaluate
+    tests -.->|"unit tests,<br/>no real model"| model_tool
+    tests -.->|"unit and CLI tests"| retrieval_tool

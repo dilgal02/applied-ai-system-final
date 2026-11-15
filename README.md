@@ -12,9 +12,15 @@ The advanced part of this project is a **built-in reliability system**:
 every round of the duel is checked by an independent inspector before the
 new game state is saved.
 
-> **What this project does not use:** no external AI API, no trained
-> model, no language model and no RAG. The Solo game does not go through
-> the duel inspector.
+> **Where AI is and is not used:** the game itself uses no AI model;
+> Vector is a plain algorithm. Separately, the repository has two
+> command-line tools for a future Strategy Coach: one runs a small
+> pretrained language model (Qwen3-0.6B) locally on the CPU, and one
+> searches the game's own knowledge files with BM25. These tools are not
+> connected to each other, to the app or to the game engine yet, so there
+> is no full RAG pipeline and no Coach in the interface. No external AI
+> inference API is used, and no model was trained or fine-tuned. The Solo
+> game does not go through the duel inspector.
 
 ## Contents
 
@@ -27,6 +33,7 @@ new game state is saved.
 - [Setup](#setup)
 - [Running the app, tests and evaluation](#running-the-app-tests-and-evaluation)
 - [Evaluation](#evaluation)
+- [Local model and knowledge search](#local-model-and-knowledge-search)
 - [Design decisions and trade-offs](#design-decisions-and-trade-offs)
 - [Results and limits of testing](#results-and-limits-of-testing)
 - [Known limitations](#known-limitations)
@@ -136,11 +143,13 @@ again with its own number comparisons:
 
 When a round is rejected:
 
-- bad input (empty, text, fractions, out of range) gets a clear message
-  and does not use up a round;
-- an engine error (`ValueError`) is passed on unchanged;
-- an inspector rejection becomes a `GuardrailViolation`. The player sees
-  only a general message, never the inner reason;
+- bad input (empty, text, fractions, out of range) is caught by the duel
+  page itself, gets a clear message and does not use up a round;
+- an engine error (`ValueError`) is passed on unchanged by the service,
+  and the page shows its message;
+- the inspector raises a `ValueError` when a rule is broken. The service
+  turns it into a `GuardrailViolation`, and the page shows only a general
+  message, never the inner reason;
 - the log shows `duel_round_rejected` with `stage=engine` or
   `stage=guardrail`, and the old `duel_state` stays as it was.
 
@@ -158,6 +167,9 @@ When a round is rejected:
 | `guardrails.py` | Independent inspector `validate_transition` |
 | `duel_service.py` | `safe_play_round`, `GuardrailViolation`, logging |
 | `evaluate.py` | Reproducible evaluation of six duel scenarios |
+| `coach_model.py` | Separate CLI: download the pinned Qwen3-0.6B model, run a local CPU check |
+| `coach_retrieval.py` | Separate CLI: BM25 search over `knowledge/*.md` |
+| `knowledge/*.md` | The game's own knowledge files, 22 sections with stable IDs |
 
 Mermaid source: [diagrams/architecture.mmd](diagrams/architecture.mmd)
 
@@ -165,6 +177,9 @@ Mermaid source: [diagrams/architecture.mmd](diagrams/architecture.mmd)
 flowchart TD
     %% Number Duel: architecture of the actual implementation.
     %% README.md shows the same diagram so GitHub can render it.
+    %% The local model and the retrieval tools are separate command-line
+    %% tools. They are not connected to each other, to the app or to the
+    %% game engine yet.
 
     player(["Player<br/>(web browser)"])
     app["app.py<br/>set_page_config + st.navigation"]
@@ -181,14 +196,13 @@ flowchart TD
 
     subgraph core["Game core (plain Python, no Streamlit)"]
         logic["logic_utils.py<br/>parse_guess, check_guess,<br/>get_closeness, update_score"]
-        service["duel_service.safe_play_round"]
-        engine["duel_logic.play_round<br/>(engine)"]
+        service["duel_service.safe_play_round<br/>logs accepted / rejected rounds"]
+        engine["duel_logic.py (engine)<br/>create_duel, play_round"]
         bot["bot_agent.py<br/>choose_guess, update_bounds"]
-        candidate["candidate DuelState"]
         inspector["guardrails.validate_transition<br/>(independent checks)"]
     end
 
-    rejected["Round not accepted<br/>error message, WARNING log<br/>for engine and guardrail;<br/>old duel_state kept"]
+    rejected["Round not accepted<br/>message on the page;<br/>old duel_state kept"]
 
     player --> app
     app --> solo
@@ -197,19 +211,20 @@ flowchart TD
     solo --> logic
     solo <--> solo_state
 
+    duel -->|"Start Duel: create_duel"| engine
     duel -->|"empty, text, fraction<br/>or out of range"| rejected
     duel -->|"valid whole number"| service
-    service --> engine
-    engine -->|"hints"| logic
+    service -->|"1. play_round"| engine
+    engine -->|"check_guess for hints"| logic
     engine -->|"bounds and outcome,<br/>no secret number"| bot
     bot -->|"next guess, new bounds"| engine
-    engine --> candidate
-    engine -->|"ValueError"| rejected
-    candidate --> inspector
-    inspector -->|"accepted"| service
-    service -->|"accepted state"| duel
+    engine -->|"candidate DuelState,<br/>or ValueError for bad input"| service
+    service -->|"2. validate_transition<br/>(old state, candidate)"| inspector
+    inspector -->|"ValueError if a rule is broken"| service
+    service -->|"accepted: candidate"| duel
+    service -->|"engine ValueError passed on;<br/>inspector ValueError becomes<br/>GuardrailViolation"| duel
     duel -->|"save"| duel_state
-    inspector -->|"GuardrailViolation"| rejected
+    duel -->|"GuardrailViolation: general message;<br/>engine ValueError: its message"| rejected
 
     subgraph evaluation["Evaluation (no Streamlit, no server)"]
         evaluate["evaluate.py<br/>6 fixed scenarios"]
@@ -217,14 +232,43 @@ flowchart TD
         fault["mock.patch fault injection<br/>(evaluation only)"]
     end
 
-    evaluate --> service
+    evaluate -->|"safe_play_round"| service
+    evaluate -->|"create_duel; play_round<br/>to build the injected fault"| engine
     evaluate --> report
     fault -.->|"replaces play_round<br/>in guardrail-blocked"| service
+
+    subgraph model_tool["Local model CLI (coach_model.py, separate)"]
+        download_cmd["coach_model.py download"]
+        hub[("Hugging Face Hub<br/>Qwen/Qwen3-0.6B<br/>pinned revision c1899de")]
+        weights[("models/Qwen3-0.6B<br/>local weights, git-ignored")]
+        smoke_cmd["coach_model.py smoke<br/>prompt + local weights"]
+        cpu["Transformers + PyTorch<br/>CPU generation, thinking off,<br/>limited answer length"]
+        answer["answer on screen<br/>+ optional JSON report"]
+    end
+
+    download_cmd -->|"network needed only here"| hub
+    hub -->|"snapshot_download"| weights
+    smoke_cmd --> cpu
+    weights -->|"local files only, no network"| cpu
+    cpu --> answer
+
+    subgraph retrieval_tool["Knowledge search CLI (coach_retrieval.py, separate)"]
+        knowledge[("knowledge/*.md<br/>rules, strategy, reliability<br/>22 sections with source_id")]
+        bm25["BM25 index<br/>(Python standard library)"]
+        query_cmd["coach_retrieval.py<br/>--query --top-k"]
+        found["found sections:<br/>source_id, path, score, text<br/>score = word match,<br/>not model confidence"]
+    end
+
+    knowledge -->|"one entry per section"| bm25
+    query_cmd -->|"search"| bm25
+    bm25 --> found
 
     tests["tests/ (pytest)"]
     tests -.->|"unit tests"| core
     tests -.->|"AppTest UI tests"| pages
     tests -.->|"CLI test"| evaluate
+    tests -.->|"unit tests,<br/>no real model"| model_tool
+    tests -.->|"unit and CLI tests"| retrieval_tool
 ```
 
 ## Setup
@@ -368,6 +412,60 @@ passed: 1  failed: 0  total: 1
 [exit code: 0]
 ```
 
+## Local model and knowledge search
+
+These are two separate command-line tools, prepared for a future Strategy
+Coach. They do not change the game, and the game does not need them. They
+are not connected to each other yet: there is no full RAG pipeline and no
+Coach in the interface.
+
+**Local model (`coach_model.py`)**
+
+- Model: [Qwen/Qwen3-0.6B](https://huggingface.co/Qwen/Qwen3-0.6B), a
+  small pretrained language model (Apache-2.0 license), pinned to revision
+  `c1899de289a04d12100db370d81485cdf75e47ca`. It was not trained or
+  fine-tuned in this project.
+- `download` is the only command that uses the network. It saves the model
+  (about 1.5 GB) to `models/Qwen3-0.6B`, which Git ignores.
+- `smoke` reads only local files and generates one short answer on the CPU
+  with Transformers and PyTorch: `model.eval()`, `torch.inference_mode()`,
+  thinking turned off, greedy decoding and at most 64 new tokens by
+  default. It can save a JSON report with `--output`.
+- If the dependencies or the model are missing, both commands print what
+  to install or run.
+- The saved check [artifacts/local_model_smoke.json](artifacts/local_model_smoke.json)
+  was made with `HF_HUB_OFFLINE=1`. The model answered: "Binary search is a
+  method of finding a target value in a sorted list by repeatedly dividing
+  the search interval in half."
+
+**Knowledge search (`coach_retrieval.py`)**
+
+- Splits `knowledge/rules.md`, `knowledge/strategy.md` and
+  `knowledge/reliability.md` into 22 sections, each with a stable
+  `source_id` such as `rules-win-and-draw`.
+- Builds its own BM25 index with the Python standard library and prints
+  the best sections with their source ID, path, score and text.
+- The score shows how well the words of the query match a section. It is
+  not the confidence of a model.
+
+```bash
+# Optional coach dependencies (the game does not need them)
+python -m pip install -r requirements-coach.txt
+
+# Download the pinned model once (network needed)
+python coach_model.py download
+
+# Local CPU check (reads only local files)
+python coach_model.py smoke
+
+# Search the game's knowledge files
+python coach_retrieval.py --query "What happens if both players guess correctly?" --top-k 3
+```
+
+The coach tools were checked only on macOS 26.6.1 (arm64) with Python
+3.13.15, torch 2.15.0 and transformers 5.23.0, on the CPU. Windows and
+Linux are not verified yet.
+
 ## Design decisions and trade-offs
 
 - **A deterministic bot instead of an AI service.** Vector works without
@@ -391,12 +489,20 @@ passed: 1  failed: 0  total: 1
   page. So each page calls `apply_theme()`, which uses `st.html`. The CSS
   uses Streamlit's `data-testid` attributes, which can change between
   versions.
+- **A pinned model that runs locally.** The exact model revision is fixed,
+  so everyone downloads the same files, and generation never uses the
+  network. The trade-off is about 1.5 GB of weights and slower answers on
+  the CPU.
+- **Keyword search without extra libraries.** BM25 with the standard
+  library is easy to test and explain. The trade-off is that it matches
+  words, not meaning, so a question worded differently can miss the right
+  section.
 
 ## Results and limits of testing
 
 Last confirmed results, on Python 3.13.15 with Streamlit 1.60.0:
 
-- **119 automated tests passed** (`python -m pytest -q`);
+- **143 automated tests passed** (`python -m pytest -q`);
 - **6 of 6 evaluation scenarios passed** (`python evaluate.py`).
 
 These are two different measures, and neither is a guarantee that the app
@@ -412,7 +518,11 @@ What the tests cover:
   blocked without an error in the page, Vector's secret is not shown during
   the duel, and New Duel does not change the Solo game;
 - the evaluation script through a real command-line run, including a
-  check that two runs give the same JSON.
+  check that two runs give the same JSON;
+- the coach tools: messages for missing dependencies or a missing model,
+  the pinned model revision, and the knowledge search (expected sources,
+  empty and unrelated queries, `top_k`, stable order, duplicate IDs).
+  These tests do not load the real model.
 
 Limits of this testing:
 
@@ -423,6 +533,8 @@ Limits of this testing:
   automated visual tests;
 - only Python 3.13.15 and Streamlit 1.60.0 were tested. Streamlit 1.36 is
   the declared minimum, but it was not tested;
+- the real local model is checked only by `coach_model.py smoke` runs,
+  which are not part of pytest;
 - there are no load or multi-user tests.
 
 ## Known limitations
@@ -444,6 +556,13 @@ Limits of this testing:
 - **Solo is not inspected.** Only duel rounds go through the inspector.
 - **Solo scoring keeps a rule from the base project:** a "Too High" guess
   on an even attempt adds 5 points instead of taking 5 away.
+- **The coach tools are not connected yet.** The local model and the
+  knowledge search only work as separate command-line tools. The app and
+  the game engine do not use them, and there is no Coach in the interface.
+- **The local model is small.** Qwen3-0.6B can give wrong or incomplete
+  answers. The smoke check only shows that it runs locally and gives a
+  short English answer; it does not check that answers are correct.
+- **The knowledge search matches words, not meaning.**
 
 ## Project structure
 
@@ -458,6 +577,11 @@ duel_logic.py          duel state, create_duel, play_round
 guardrails.py          independent inspector validate_transition
 duel_service.py        safe_play_round, GuardrailViolation, logging
 evaluate.py            reproducible evaluation script
+coach_model.py         separate CLI: local model download and CPU check
+coach_retrieval.py     separate CLI: BM25 search over knowledge files
+knowledge/             the game's knowledge files (22 sections)
+requirements-coach.txt optional dependencies for the coach tools
+models/                downloaded model weights (git-ignored)
 tests/                 pytest tests (unit, AppTest UI, CLI)
 artifacts/             saved evaluation report and real command output
 diagrams/              Mermaid architecture source
