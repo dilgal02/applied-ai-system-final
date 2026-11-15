@@ -8,10 +8,11 @@
 | Local model | Qwen/Qwen3-0.6B, a small pretrained language model (pinned revision `c1899de`), run on the CPU by `coach_model.py`; used by the Coach CLI, not by the game |
 | Retrieval | BM25 keyword search over 22 sections of `knowledge/*.md` (`coach_retrieval.py`) |
 | Strategy Coach | CLI prototype `coach.py`: question → knowledge search → local model → answer with checked source IDs; not connected to the Streamlit app |
-| Not used | No training or fine-tuning, no external AI inference API, no Coach in the interface, no few-shot specialization |
+| Prompt profiles | `baseline` (default) and `specialized`, which adds three few-shot examples; prompt specialization only, no weight training |
+| Not used | No training or fine-tuning, no external AI inference API, no Coach in the interface |
 | Advanced feature | A built-in reliability system that checks every duel step before it is saved |
 | Tested environment | Python 3.13.15, Streamlit 1.60.0; coach tools on macOS arm64 with torch 2.15.0 and transformers 5.23.0, CPU only |
-| Last confirmed results | 153 automated tests passed; 6 of 6 evaluation scenarios passed |
+| Last confirmed results | 164 automated tests passed; 6 of 6 evaluation scenarios passed |
 
 ## Purpose and intended use
 
@@ -98,7 +99,7 @@ Limits:
 - the scenarios test the game core, not the browser page;
 - the tests and the evaluation were written with help from the same AI
   agent that helped write the code, so they may share blind spots with it;
-- the 153 passing tests and the 6 passing scenarios are separate measures.
+- the 164 passing tests and the 6 passing scenarios are separate measures.
   Neither proves that the app has no bugs.
 
 ## Local language model (separate CLI)
@@ -157,9 +158,9 @@ that cites sources like `[reliability-midpoint-not-required]`.
 - **Abstaining**: if the search finds nothing, the status is `abstained`
   and the model is not called. This refusal is a rule of the program, not
   an answer from the model.
-- **Baseline**: `--no-retrieval` skips the search and calls the same model
-  with the same instructions and settings, without sources. Its status is
-  `answered_without_retrieval`.
+- **Without retrieval**: `--no-retrieval` skips the search and calls the
+  same model with the same instructions and settings, without sources. Its
+  status is `answered_without_retrieval`.
 
 Three real runs are saved in [artifacts/rag_smoke.json](artifacts/rag_smoke.json),
 all with `HF_HUB_OFFLINE=1`:
@@ -176,6 +177,77 @@ all with `HF_HUB_OFFLINE=1`:
 
 These are three smoke runs, not an evaluation. They do not show whether
 retrieval makes answers better or worse in general.
+
+## Few-shot prompt specialization
+
+**Method.** The coach has two prompt profiles (`coach_prompts.py`).
+`baseline`, the default, gives the model the system instructions, the
+current sources and the question. `specialized` gives exactly the same,
+plus three short few-shot examples placed as earlier chat turns. Each
+example has its own sources from the knowledge files, a question and a
+short answer with a citation. The topics are setting up a new duel, the
+New Duel button, and logs without secret numbers. The examples show the
+wanted style: a direct answer, one useful detail, no repetition. This is
+prompt specialization only: no model weights were trained or changed. The
+model, system instructions, retrieval, greedy decoding and the limit of
+128 new tokens are the same in both profiles.
+
+**Keeping examples and evaluation apart.** The example questions are not
+among the six evaluation questions. Citations are only allowed from the
+sources found for the current question: an ID copied from an example is
+rejected unless it was also found for the current question. Two example
+sources, `rules-starting-a-duel` and `rules-new-duel`, were found as the
+third source for two evaluation questions; there, citing them is allowed
+because they are current sources.
+
+**Comparison.** `evaluate_coach.py` uses six questions fixed before the
+first run. For each question the knowledge search runs once, both profiles
+get the same sources in the same order, one loaded generator is shared,
+and each profile makes one greedy generation: 12 generations in total,
+with `HF_HUB_OFFLINE=1`. Everything, including all raw answers and full
+messages, is saved in
+[artifacts/coach_specialization.json](artifacts/coach_specialization.json).
+
+| Metric (6 questions, 1 generation each) | baseline | specialized |
+|------------------------------------------|----------|-------------|
+| Mean words, without citation IDs | 35.8 | 39.3 |
+| Mean sentences (heuristic) | 2.0 | 2.7 |
+| Answers within three sentences (heuristic) | 6 of 6 | 4 of 6 |
+| Answers with at least one citation | 5 of 6 | 6 of 6 |
+| Answers whose citations are all valid | 5 of 6 | 6 of 6 |
+| Answers with an unknown citation | 0 | 0 |
+| `validation_failed` | 1 | 0 |
+| Mean generated tokens | 54.0 | 60.3 |
+
+These metrics count the form of the answers. They are not factual
+accuracy, and the sentence count is a simple heuristic.
+
+One pair of raw answers, for "What happens if both players guess
+correctly in the same round?":
+
+> **baseline** (`validation_failed`): If both players guess correctly in
+> the same round, the duel is a draw. This is determined by the rules
+> provided, and no source is needed for this specific information.
+
+> **specialized** (`answered`): If both players guess correctly in the
+> same round, the duel is a draw [rules-win-and-draw]. If only you guess
+> correctly, you win; if only Vector guesses correctly, Vector wins. If
+> nobody guesses correctly and the round limit is reached, the duel is a
+> draw [rules-win-and-draw]. If the duel is rejected, the game state does
+> not change, and no round is added [reliability-rejected-round].
+
+**What the results show.** On these six questions the specialized profile
+always cited valid sources and had no `validation_failed` answer, while
+the baseline gave one answer without any citation. But the specialized
+answers were longer and broke the three-sentence limit twice, so the
+examples did not make the answers shorter or more focused; in the pair
+above, the specialized answer has four sentences and adds an unrelated one
+about rejected rounds. Reading the answers by hand, not as a metric: for
+"Can I submit a fractional guess, and does it use a round?" both profiles
+wrongly said that a fractional guess is allowed, although the knowledge
+files say it is rejected; the search ranked the right section,
+`rules-valid-guesses`, only third. With one generation per profile on six
+questions, these differences are too small to show a general improvement.
 
 ## State, data and privacy
 

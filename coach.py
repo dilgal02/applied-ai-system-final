@@ -6,6 +6,7 @@ with source IDs.
     python coach.py --question \\
         "Must the inspector require Vector to guess the exact midpoint?"
     python coach.py --question "..." --no-retrieval   # model only, no search
+    python coach.py --question "..." --profile specialized  # few-shot
     python coach.py --question "..." --output report.json
 
 ask_coach() is the function for callers such as this CLI or, later, the
@@ -24,6 +25,14 @@ from pathlib import Path
 
 import coach_model
 import coach_retrieval
+from coach_prompts import (
+    DEFAULT_PROFILE,
+    PROFILES,
+    SPECIALIZED,
+    check_profile,
+    example_messages,
+    format_user_message,
+)
 
 TOP_K = 3
 MAX_NEW_TOKENS = 128
@@ -70,6 +79,7 @@ CITATION = re.compile(r"\[([^\[\]\n]{1,80})\]")
 class CoachResult:
     question: str
     mode: str  # "rag" or "no_retrieval"
+    profile: str  # "baseline" or "specialized" (few-shot examples)
     status: str
     answer: str | None  # the model's answer, unchanged; None if not called
     sources: list  # found sections: source_id, path, title, score, text
@@ -85,23 +95,21 @@ class CoachResult:
         return asdict(self)
 
 
-def build_messages(question: str, sections=None) -> list:
-    """Chat messages for the model. sections=None means no retrieval."""
-    if sections is None:
-        user = f"Question: {question}"
-    else:
-        blocks = [
-            f"[{section.source_id}] {section.title}\n{section.text}"
-            for section in sections
-        ]
-        user = (
-            "Sources:\n\n" + "\n\n".join(blocks)
-            + f"\n\nQuestion: {question}"
-        )
-    return [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": user},
-    ]
+def build_messages(question: str, sections=None,
+                   profile: str = DEFAULT_PROFILE) -> list:
+    """Chat messages for the model. sections=None means no retrieval.
+
+    The specialized profile puts the few-shot examples between the system
+    instructions and the current question; everything else is the same.
+    """
+    check_profile(profile)
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    if profile == SPECIALIZED:
+        messages += example_messages()
+    messages.append(
+        {"role": "user", "content": format_user_message(question, sections)}
+    )
+    return messages
 
 
 def find_citations(answer: str) -> list:
@@ -113,14 +121,21 @@ def check(description: str, passed, **details) -> dict:
 
 
 def ask_coach(question: str, use_retrieval: bool = True, *,
+              profile: str = DEFAULT_PROFILE,
               generator=None, search=None) -> CoachResult:
     """Answer a question about the game.
 
     With retrieval: search the knowledge files, give the model the found
-    sections, and check the source IDs it cites. If nothing is found, the
-    coach abstains and does not call the model.
+    sections, and check the source IDs it cites. Only the sections found
+    for this question are allowed, never the sources of the few-shot
+    examples. If nothing is found, the coach abstains and does not call
+    the model.
     Without retrieval: give the model only the question, with the same
     instructions and settings.
+
+    profile: "baseline" (default) or "specialized" (adds few-shot
+    examples). The specialized profile is only for comparing profiles with
+    retrieval, so it cannot be used without retrieval.
 
     generator and search can be replaced, for example in tests. Raises
     coach_model.CoachSetupError if the model or its libraries are missing.
@@ -128,6 +143,12 @@ def ask_coach(question: str, use_retrieval: bool = True, *,
     question = (question or "").strip()
     if not question:
         raise ValueError("question must not be empty.")
+    check_profile(profile)
+    if profile == SPECIALIZED and not use_retrieval:
+        raise ValueError(
+            "The specialized profile compares prompts with retrieval, so it "
+            "cannot be used with --no-retrieval."
+        )
 
     sources = []
     if use_retrieval:
@@ -147,6 +168,7 @@ def ask_coach(question: str, use_retrieval: bool = True, *,
             return CoachResult(
                 question=question,
                 mode=MODE_RAG,
+                profile=profile,
                 status=ABSTAINED,
                 answer=None,
                 sources=[],
@@ -159,10 +181,10 @@ def ask_coach(question: str, use_retrieval: bool = True, *,
                 note=ABSTAIN_NOTE,
             )
         messages = build_messages(
-            question, [result.section for result in results]
+            question, [result.section for result in results], profile
         )
     else:
-        messages = build_messages(question, None)
+        messages = build_messages(question, None, profile)
 
     generator = generator or coach_model.get_generator()
     generation = generator.generate(messages, MAX_NEW_TOKENS)
@@ -201,6 +223,7 @@ def ask_coach(question: str, use_retrieval: bool = True, *,
     return CoachResult(
         question=question,
         mode=MODE_RAG if use_retrieval else MODE_NO_RETRIEVAL,
+        profile=profile,
         status=status,
         answer=answer,
         sources=sources,
@@ -230,6 +253,7 @@ def print_result(result: CoachResult) -> None:
         mode = "no_retrieval (local model only, no sources given)"
     print(f"question:  {result.question}")
     print(f"mode:      {mode}")
+    print(f"profile:   {result.profile}")
     if result.mode == MODE_RAG:
         print("sources:   (score = word match, not model confidence)")
         for source in result.sources:
@@ -265,11 +289,20 @@ def main(argv=None) -> int:
         action="store_true",
         help="skip the knowledge search (baseline: the model only)",
     )
+    parser.add_argument(
+        "--profile",
+        choices=PROFILES,
+        default=DEFAULT_PROFILE,
+        help="prompt profile (default: baseline; specialized adds "
+             "few-shot examples, only with retrieval)",
+    )
     parser.add_argument("--output", help="save a JSON report here")
     args = parser.parse_args(argv)
 
     try:
-        result = ask_coach(args.question, use_retrieval=not args.no_retrieval)
+        result = ask_coach(args.question,
+                           use_retrieval=not args.no_retrieval,
+                           profile=args.profile)
     except coach_model.CoachSetupError as error:
         print(error, file=sys.stderr)
         return 2

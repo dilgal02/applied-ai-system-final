@@ -1,0 +1,1725 @@
+{
+  "description": "Baseline vs specialized (few-shot) coach prompts on six fixed questions: one search per question, the same sources for both profiles, one shared generator, one greedy generation per profile.",
+  "notes": [
+    "Prompt specialization only: no model weights were trained.",
+    "Both profiles use the same model, system instructions, retrieval, generation settings and token limit. The only difference is the three few-shot examples.",
+    "The few-shot examples use their own questions, which are not among the evaluation questions.",
+    "The metrics count form (words, sentences, citations). They do not measure factual accuracy. The sentence count is a heuristic.",
+    "Citations are only allowed from the sources found for the current question, never from the few-shot examples."
+  ],
+  "generation_settings": {
+    "model": "Qwen/Qwen3-0.6B",
+    "revision": "c1899de289a04d12100db370d81485cdf75e47ca",
+    "device": "cpu",
+    "dtype": "float32",
+    "local_files_only": true,
+    "inference_mode": true,
+    "enable_thinking": false,
+    "do_sample": false,
+    "max_new_tokens": 128,
+    "prompt_tokens": 378,
+    "generated_tokens": 35,
+    "thinking_off": true,
+    "seconds": {
+      "load": 3.66,
+      "generate": 3.64
+    }
+  },
+  "environment": {
+    "python": "3.13.15",
+    "platform": "macOS-26.6.1-arm64-arm-64bit-Mach-O",
+    "machine": "arm64",
+    "torch": "2.15.0",
+    "transformers": "5.23.0",
+    "huggingface_hub": "2.4.0",
+    "tokenizers": "0.23.3",
+    "safetensors": "0.8.0",
+    "device": "cpu",
+    "torch_threads": 4,
+    "HF_HUB_OFFLINE": "1"
+  },
+  "system_prompt": "You are the Strategy Coach for the game Number Duel. Answer the player's question in English in at most three short sentences. If sources are given, use only those sources and cite each source you use by writing its ID in square brackets, exactly as it is written in the source list. If you are not sure, say so.",
+  "profiles": {
+    "baseline": {
+      "few_shot_examples": 0
+    },
+    "specialized": {
+      "few_shot_examples": 3,
+      "examples": [
+        {
+          "source_ids": [
+            "rules-starting-a-duel"
+          ],
+          "question": "What do I need to do before a duel starts?",
+          "answer": "Choose a difficulty, enter your secret number and press Start Duel. Vector's secret number is drawn at random only at that moment [rules-starting-a-duel]."
+        },
+        {
+          "source_ids": [
+            "rules-new-duel"
+          ],
+          "question": "Can I use New Duel in the middle of a duel?",
+          "answer": "Yes, New Duel works during a duel and after it ends. It clears the current duel and its history but keeps the chosen difficulty [rules-new-duel]."
+        },
+        {
+          "source_ids": [
+            "reliability-logs"
+          ],
+          "question": "Do the game logs show my secret number?",
+          "answer": "No, the logs never contain secret numbers or full game states. A rejected round is logged only with its round number and its stage, engine or guardrail [reliability-logs]."
+        }
+      ],
+      "example_messages": [
+        {
+          "role": "user",
+          "content": "Sources:\n\n[rules-starting-a-duel] Starting a duel\nBefore the duel you choose a difficulty and enter your secret number.\nVector's secret number is drawn at random only when you press Start Duel.\nDuring the duel the difficulty and both secret numbers do not change.\nVector's secret number is shown only after the duel ends.\n\nQuestion: What do I need to do before a duel starts?"
+        },
+        {
+          "role": "assistant",
+          "content": "Choose a difficulty, enter your secret number and press Start Duel. Vector's secret number is drawn at random only at that moment [rules-starting-a-duel]."
+        },
+        {
+          "role": "user",
+          "content": "Sources:\n\n[rules-new-duel] Starting over with New Duel\nThe New Duel button is available during a duel and after it ends. It\nclears the current duel and its history and goes back to the setup. The\nchosen difficulty is kept. New Duel does not change the Solo game.\n\nQuestion: Can I use New Duel in the middle of a duel?"
+        },
+        {
+          "role": "assistant",
+          "content": "Yes, New Duel works during a duel and after it ends. It clears the current duel and its history but keeps the chosen difficulty [rules-new-duel]."
+        },
+        {
+          "role": "user",
+          "content": "Sources:\n\n[reliability-logs] Logs without secrets\nThe safe service writes a log line for every round. An accepted round is\nlogged as duel_round_accepted with the round number and the new status. A\nrejected round is logged as duel_round_rejected with the round number and\nthe stage, engine or guardrail. The logs never contain secret numbers or\nfull game states.\n\nQuestion: Do the game logs show my secret number?"
+        },
+        {
+          "role": "assistant",
+          "content": "No, the logs never contain secret numbers or full game states. A rejected round is logged only with its round number and its stage, engine or guardrail [reliability-logs]."
+        }
+      ]
+    }
+  },
+  "questions": [
+    "What happens if both players guess correctly in the same round?",
+    "What number range and round limit does Hard difficulty use?",
+    "Does choose_guess receive the player secret number?",
+    "Must the inspector require Vector to guess the exact midpoint?",
+    "Does the Solo game pass through the duel inspector?",
+    "Can I submit a fractional guess, and does it use a round?"
+  ],
+  "search_calls": 6,
+  "generations": 12,
+  "results": [
+    {
+      "question": "What happens if both players guess correctly in the same round?",
+      "sources": [
+        {
+          "source_id": "rules-win-and-draw",
+          "path": "knowledge/rules.md",
+          "title": "Winning and draws",
+          "score": 10.037,
+          "text": "The result is decided after both moves of a round. If both players guess\ncorrectly in the same round, the duel is a draw. If only you guess\ncorrectly, you win. If only Vector guesses correctly, Vector wins. If\nnobody guesses correctly and the round limit is reached, the duel is a\ndraw. Otherwise the duel goes on to the next round."
+        },
+        {
+          "source_id": "reliability-inspector-checks",
+          "path": "knowledge/reliability.md",
+          "title": "What the inspector checks",
+          "score": 6.278,
+          "text": "The inspector checks that the duel was still running and had rounds left,\nthat the settings and both secret numbers did not change, that exactly one\nround was added and earlier rounds stayed the same, that both guesses are\nwhole numbers inside the range, that both hints match the secret numbers,\nthat Vector's range matches its whole history, and that the status\n(playing, win or draw) is correct."
+        },
+        {
+          "source_id": "reliability-rejected-round",
+          "path": "knowledge/reliability.md",
+          "title": "What happens when a round is rejected",
+          "score": 5.034,
+          "text": "When a round is rejected, the game state does not change. No round is\nadded, the round counter stays the same, and the old duel state is kept.\nA rejected guess, such as a number outside the range, shows a clear\nmessage. A round stopped by the inspector shows only a general message,\nnot the inner reason, and you can simply try again."
+        }
+      ],
+      "same_sources_for_both_profiles": true,
+      "same_current_turn_for_both_profiles": true,
+      "runs": {
+        "baseline": {
+          "question": "What happens if both players guess correctly in the same round?",
+          "mode": "rag",
+          "profile": "baseline",
+          "status": "validation_failed",
+          "answer": "If both players guess correctly in the same round, the duel is a draw. This is determined by the rules provided, and no source is needed for this specific information.",
+          "sources": [
+            {
+              "source_id": "rules-win-and-draw",
+              "path": "knowledge/rules.md",
+              "title": "Winning and draws",
+              "score": 10.037,
+              "text": "The result is decided after both moves of a round. If both players guess\ncorrectly in the same round, the duel is a draw. If only you guess\ncorrectly, you win. If only Vector guesses correctly, Vector wins. If\nnobody guesses correctly and the round limit is reached, the duel is a\ndraw. Otherwise the duel goes on to the next round."
+            },
+            {
+              "source_id": "reliability-inspector-checks",
+              "path": "knowledge/reliability.md",
+              "title": "What the inspector checks",
+              "score": 6.278,
+              "text": "The inspector checks that the duel was still running and had rounds left,\nthat the settings and both secret numbers did not change, that exactly one\nround was added and earlier rounds stayed the same, that both guesses are\nwhole numbers inside the range, that both hints match the secret numbers,\nthat Vector's range matches its whole history, and that the status\n(playing, win or draw) is correct."
+            },
+            {
+              "source_id": "reliability-rejected-round",
+              "path": "knowledge/reliability.md",
+              "title": "What happens when a round is rejected",
+              "score": 5.034,
+              "text": "When a round is rejected, the game state does not change. No round is\nadded, the round counter stays the same, and the old duel state is kept.\nA rejected guess, such as a number outside the range, shows a clear\nmessage. A round stopped by the inspector shows only a general message,\nnot the inner reason, and you can simply try again."
+            }
+          ],
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are the Strategy Coach for the game Number Duel. Answer the player's question in English in at most three short sentences. If sources are given, use only those sources and cite each source you use by writing its ID in square brackets, exactly as it is written in the source list. If you are not sure, say so."
+            },
+            {
+              "role": "user",
+              "content": "Sources:\n\n[rules-win-and-draw] Winning and draws\nThe result is decided after both moves of a round. If both players guess\ncorrectly in the same round, the duel is a draw. If only you guess\ncorrectly, you win. If only Vector guesses correctly, Vector wins. If\nnobody guesses correctly and the round limit is reached, the duel is a\ndraw. Otherwise the duel goes on to the next round.\n\n[reliability-inspector-checks] What the inspector checks\nThe inspector checks that the duel was still running and had rounds left,\nthat the settings and both secret numbers did not change, that exactly one\nround was added and earlier rounds stayed the same, that both guesses are\nwhole numbers inside the range, that both hints match the secret numbers,\nthat Vector's range matches its whole history, and that the status\n(playing, win or draw) is correct.\n\n[reliability-rejected-round] What happens when a round is rejected\nWhen a round is rejected, the game state does not change. No round is\nadded, the round counter stays the same, and the old duel state is kept.\nA rejected guess, such as a number outside the range, shows a clear\nmessage. A round stopped by the inspector shows only a general message,\nnot the inner reason, and you can simply try again.\n\nQuestion: What happens if both players guess correctly in the same round?"
+            }
+          ],
+          "citations": [],
+          "checks": [
+            {
+              "check": "answer is not empty",
+              "passed": true
+            },
+            {
+              "check": "no thinking block in the answer",
+              "passed": true
+            },
+            {
+              "check": "answer cites at least one source",
+              "passed": false
+            },
+            {
+              "check": "every cited ID is one of the found sources",
+              "passed": true,
+              "unknown_ids": []
+            }
+          ],
+          "generator_called": true,
+          "generation": {
+            "model": "Qwen/Qwen3-0.6B",
+            "revision": "c1899de289a04d12100db370d81485cdf75e47ca",
+            "device": "cpu",
+            "dtype": "float32",
+            "local_files_only": true,
+            "inference_mode": true,
+            "enable_thinking": false,
+            "do_sample": false,
+            "max_new_tokens": 128,
+            "prompt_tokens": 378,
+            "generated_tokens": 35,
+            "thinking_off": true,
+            "seconds": {
+              "load": 3.66,
+              "generate": 3.64
+            }
+          },
+          "environment": {
+            "python": "3.13.15",
+            "platform": "macOS-26.6.1-arm64-arm-64bit-Mach-O",
+            "machine": "arm64",
+            "torch": "2.15.0",
+            "transformers": "5.23.0",
+            "huggingface_hub": "2.4.0",
+            "tokenizers": "0.23.3",
+            "safetensors": "0.8.0",
+            "device": "cpu",
+            "torch_threads": 4,
+            "HF_HUB_OFFLINE": "1"
+          },
+          "note": "The citation check only checks the source IDs, not whether each sentence of the answer is true.",
+          "metrics": {
+            "words_without_citations": 30,
+            "sentences_heuristic": 2,
+            "within_three_sentences": true,
+            "has_citation": false,
+            "all_citations_valid": false,
+            "unknown_citations": [],
+            "validation_failed": true,
+            "generated_tokens": 35
+          }
+        },
+        "specialized": {
+          "question": "What happens if both players guess correctly in the same round?",
+          "mode": "rag",
+          "profile": "specialized",
+          "status": "answered",
+          "answer": "If both players guess correctly in the same round, the duel is a draw [rules-win-and-draw]. If only you guess correctly, you win; if only Vector guesses correctly, Vector wins. If nobody guesses correctly and the round limit is reached, the duel is a draw [rules-win-and-draw]. If the duel is rejected, the game state does not change, and no round is added [reliability-rejected-round].",
+          "sources": [
+            {
+              "source_id": "rules-win-and-draw",
+              "path": "knowledge/rules.md",
+              "title": "Winning and draws",
+              "score": 10.037,
+              "text": "The result is decided after both moves of a round. If both players guess\ncorrectly in the same round, the duel is a draw. If only you guess\ncorrectly, you win. If only Vector guesses correctly, Vector wins. If\nnobody guesses correctly and the round limit is reached, the duel is a\ndraw. Otherwise the duel goes on to the next round."
+            },
+            {
+              "source_id": "reliability-inspector-checks",
+              "path": "knowledge/reliability.md",
+              "title": "What the inspector checks",
+              "score": 6.278,
+              "text": "The inspector checks that the duel was still running and had rounds left,\nthat the settings and both secret numbers did not change, that exactly one\nround was added and earlier rounds stayed the same, that both guesses are\nwhole numbers inside the range, that both hints match the secret numbers,\nthat Vector's range matches its whole history, and that the status\n(playing, win or draw) is correct."
+            },
+            {
+              "source_id": "reliability-rejected-round",
+              "path": "knowledge/reliability.md",
+              "title": "What happens when a round is rejected",
+              "score": 5.034,
+              "text": "When a round is rejected, the game state does not change. No round is\nadded, the round counter stays the same, and the old duel state is kept.\nA rejected guess, such as a number outside the range, shows a clear\nmessage. A round stopped by the inspector shows only a general message,\nnot the inner reason, and you can simply try again."
+            }
+          ],
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are the Strategy Coach for the game Number Duel. Answer the player's question in English in at most three short sentences. If sources are given, use only those sources and cite each source you use by writing its ID in square brackets, exactly as it is written in the source list. If you are not sure, say so."
+            },
+            {
+              "role": "user",
+              "content": "Sources:\n\n[rules-starting-a-duel] Starting a duel\nBefore the duel you choose a difficulty and enter your secret number.\nVector's secret number is drawn at random only when you press Start Duel.\nDuring the duel the difficulty and both secret numbers do not change.\nVector's secret number is shown only after the duel ends.\n\nQuestion: What do I need to do before a duel starts?"
+            },
+            {
+              "role": "assistant",
+              "content": "Choose a difficulty, enter your secret number and press Start Duel. Vector's secret number is drawn at random only at that moment [rules-starting-a-duel]."
+            },
+            {
+              "role": "user",
+              "content": "Sources:\n\n[rules-new-duel] Starting over with New Duel\nThe New Duel button is available during a duel and after it ends. It\nclears the current duel and its history and goes back to the setup. The\nchosen difficulty is kept. New Duel does not change the Solo game.\n\nQuestion: Can I use New Duel in the middle of a duel?"
+            },
+            {
+              "role": "assistant",
+              "content": "Yes, New Duel works during a duel and after it ends. It clears the current duel and its history but keeps the chosen difficulty [rules-new-duel]."
+            },
+            {
+              "role": "user",
+              "content": "Sources:\n\n[reliability-logs] Logs without secrets\nThe safe service writes a log line for every round. An accepted round is\nlogged as duel_round_accepted with the round number and the new status. A\nrejected round is logged as duel_round_rejected with the round number and\nthe stage, engine or guardrail. The logs never contain secret numbers or\nfull game states.\n\nQuestion: Do the game logs show my secret number?"
+            },
+            {
+              "role": "assistant",
+              "content": "No, the logs never contain secret numbers or full game states. A rejected round is logged only with its round number and its stage, engine or guardrail [reliability-logs]."
+            },
+            {
+              "role": "user",
+              "content": "Sources:\n\n[rules-win-and-draw] Winning and draws\nThe result is decided after both moves of a round. If both players guess\ncorrectly in the same round, the duel is a draw. If only you guess\ncorrectly, you win. If only Vector guesses correctly, Vector wins. If\nnobody guesses correctly and the round limit is reached, the duel is a\ndraw. Otherwise the duel goes on to the next round.\n\n[reliability-inspector-checks] What the inspector checks\nThe inspector checks that the duel was still running and had rounds left,\nthat the settings and both secret numbers did not change, that exactly one\nround was added and earlier rounds stayed the same, that both guesses are\nwhole numbers inside the range, that both hints match the secret numbers,\nthat Vector's range matches its whole history, and that the status\n(playing, win or draw) is correct.\n\n[reliability-rejected-round] What happens when a round is rejected\nWhen a round is rejected, the game state does not change. No round is\nadded, the round counter stays the same, and the old duel state is kept.\nA rejected guess, such as a number outside the range, shows a clear\nmessage. A round stopped by the inspector shows only a general message,\nnot the inner reason, and you can simply try again.\n\nQuestion: What happens if both players guess correctly in the same round?"
+            }
+          ],
+          "citations": [
+            "rules-win-and-draw",
+            "rules-win-and-draw",
+            "reliability-rejected-round"
+          ],
+          "checks": [
+            {
+              "check": "answer is not empty",
+              "passed": true
+            },
+            {
+              "check": "no thinking block in the answer",
+              "passed": true
+            },
+            {
+              "check": "answer cites at least one source",
+              "passed": true
+            },
+            {
+              "check": "every cited ID is one of the found sources",
+              "passed": true,
+              "unknown_ids": []
+            }
+          ],
+          "generator_called": true,
+          "generation": {
+            "model": "Qwen/Qwen3-0.6B",
+            "revision": "c1899de289a04d12100db370d81485cdf75e47ca",
+            "device": "cpu",
+            "dtype": "float32",
+            "local_files_only": true,
+            "inference_mode": true,
+            "enable_thinking": false,
+            "do_sample": false,
+            "max_new_tokens": 128,
+            "prompt_tokens": 757,
+            "generated_tokens": 90,
+            "thinking_off": true,
+            "seconds": {
+              "load": 0.0,
+              "generate": 8.96
+            }
+          },
+          "environment": {
+            "python": "3.13.15",
+            "platform": "macOS-26.6.1-arm64-arm-64bit-Mach-O",
+            "machine": "arm64",
+            "torch": "2.15.0",
+            "transformers": "5.23.0",
+            "huggingface_hub": "2.4.0",
+            "tokenizers": "0.23.3",
+            "safetensors": "0.8.0",
+            "device": "cpu",
+            "torch_threads": 4,
+            "HF_HUB_OFFLINE": "1"
+          },
+          "note": "The citation check only checks the source IDs, not whether each sentence of the answer is true.",
+          "metrics": {
+            "words_without_citations": 59,
+            "sentences_heuristic": 4,
+            "within_three_sentences": false,
+            "has_citation": true,
+            "all_citations_valid": true,
+            "unknown_citations": [],
+            "validation_failed": false,
+            "generated_tokens": 90
+          }
+        }
+      }
+    },
+    {
+      "question": "What number range and round limit does Hard difficulty use?",
+      "sources": [
+        {
+          "source_id": "rules-difficulty-limits",
+          "path": "knowledge/rules.md",
+          "title": "Difficulty ranges and round limits",
+          "score": 9.628,
+          "text": "The difficulty sets the range of possible numbers and the round limit.\nEasy uses the numbers 1 to 20 and allows 6 rounds. Normal uses the numbers\n1 to 100 and allows 8 rounds. Hard uses the numbers 1 to 50 and allows only\n5 rounds. Both secret numbers and every guess must be inside the range."
+        },
+        {
+          "source_id": "strategy-guesses-needed",
+          "path": "knowledge/strategy.md",
+          "title": "How many guesses Vector needs",
+          "score": 5.721,
+          "text": "On Easy, Vector needs at most 5 guesses, and the limit is 6 rounds, so it\nalways finds your number in time. On Normal, Vector needs at most 7\nguesses, and the limit is 8 rounds, so it also always finds your number in\ntime. On Hard, the range 1 to 50 sometimes needs 6 guesses, but the limit\nis only 5 rounds. So on Hard the limit of 5 rounds is not always enough\nfor Vector."
+        },
+        {
+          "source_id": "rules-valid-guesses",
+          "path": "knowledge/rules.md",
+          "title": "Valid guesses",
+          "score": 5.208,
+          "text": "A guess must be a whole number inside the range of the difficulty. An\nempty guess, text, a fraction such as 4.5, or a number outside the range\nis rejected with a message. A rejected guess does not use up a round."
+        }
+      ],
+      "same_sources_for_both_profiles": true,
+      "same_current_turn_for_both_profiles": true,
+      "runs": {
+        "baseline": {
+          "question": "What number range and round limit does Hard difficulty use?",
+          "mode": "rag",
+          "profile": "baseline",
+          "status": "answered",
+          "answer": "The Hard difficulty uses the numbers 1 to 50 and allows only 5 rounds. [rules-difficulty-limits]",
+          "sources": [
+            {
+              "source_id": "rules-difficulty-limits",
+              "path": "knowledge/rules.md",
+              "title": "Difficulty ranges and round limits",
+              "score": 9.628,
+              "text": "The difficulty sets the range of possible numbers and the round limit.\nEasy uses the numbers 1 to 20 and allows 6 rounds. Normal uses the numbers\n1 to 100 and allows 8 rounds. Hard uses the numbers 1 to 50 and allows only\n5 rounds. Both secret numbers and every guess must be inside the range."
+            },
+            {
+              "source_id": "strategy-guesses-needed",
+              "path": "knowledge/strategy.md",
+              "title": "How many guesses Vector needs",
+              "score": 5.721,
+              "text": "On Easy, Vector needs at most 5 guesses, and the limit is 6 rounds, so it\nalways finds your number in time. On Normal, Vector needs at most 7\nguesses, and the limit is 8 rounds, so it also always finds your number in\ntime. On Hard, the range 1 to 50 sometimes needs 6 guesses, but the limit\nis only 5 rounds. So on Hard the limit of 5 rounds is not always enough\nfor Vector."
+            },
+            {
+              "source_id": "rules-valid-guesses",
+              "path": "knowledge/rules.md",
+              "title": "Valid guesses",
+              "score": 5.208,
+              "text": "A guess must be a whole number inside the range of the difficulty. An\nempty guess, text, a fraction such as 4.5, or a number outside the range\nis rejected with a message. A rejected guess does not use up a round."
+            }
+          ],
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are the Strategy Coach for the game Number Duel. Answer the player's question in English in at most three short sentences. If sources are given, use only those sources and cite each source you use by writing its ID in square brackets, exactly as it is written in the source list. If you are not sure, say so."
+            },
+            {
+              "role": "user",
+              "content": "Sources:\n\n[rules-difficulty-limits] Difficulty ranges and round limits\nThe difficulty sets the range of possible numbers and the round limit.\nEasy uses the numbers 1 to 20 and allows 6 rounds. Normal uses the numbers\n1 to 100 and allows 8 rounds. Hard uses the numbers 1 to 50 and allows only\n5 rounds. Both secret numbers and every guess must be inside the range.\n\n[strategy-guesses-needed] How many guesses Vector needs\nOn Easy, Vector needs at most 5 guesses, and the limit is 6 rounds, so it\nalways finds your number in time. On Normal, Vector needs at most 7\nguesses, and the limit is 8 rounds, so it also always finds your number in\ntime. On Hard, the range 1 to 50 sometimes needs 6 guesses, but the limit\nis only 5 rounds. So on Hard the limit of 5 rounds is not always enough\nfor Vector.\n\n[rules-valid-guesses] Valid guesses\nA guess must be a whole number inside the range of the difficulty. An\nempty guess, text, a fraction such as 4.5, or a number outside the range\nis rejected with a message. A rejected guess does not use up a round.\n\nQuestion: What number range and round limit does Hard difficulty use?"
+            }
+          ],
+          "citations": [
+            "rules-difficulty-limits"
+          ],
+          "checks": [
+            {
+              "check": "answer is not empty",
+              "passed": true
+            },
+            {
+              "check": "no thinking block in the answer",
+              "passed": true
+            },
+            {
+              "check": "answer cites at least one source",
+              "passed": true
+            },
+            {
+              "check": "every cited ID is one of the found sources",
+              "passed": true,
+              "unknown_ids": []
+            }
+          ],
+          "generator_called": true,
+          "generation": {
+            "model": "Qwen/Qwen3-0.6B",
+            "revision": "c1899de289a04d12100db370d81485cdf75e47ca",
+            "device": "cpu",
+            "dtype": "float32",
+            "local_files_only": true,
+            "inference_mode": true,
+            "enable_thinking": false,
+            "do_sample": false,
+            "max_new_tokens": 128,
+            "prompt_tokens": 369,
+            "generated_tokens": 28,
+            "thinking_off": true,
+            "seconds": {
+              "load": 0.0,
+              "generate": 2.48
+            }
+          },
+          "environment": {
+            "python": "3.13.15",
+            "platform": "macOS-26.6.1-arm64-arm-64bit-Mach-O",
+            "machine": "arm64",
+            "torch": "2.15.0",
+            "transformers": "5.23.0",
+            "huggingface_hub": "2.4.0",
+            "tokenizers": "0.23.3",
+            "safetensors": "0.8.0",
+            "device": "cpu",
+            "torch_threads": 4,
+            "HF_HUB_OFFLINE": "1"
+          },
+          "note": "The citation check only checks the source IDs, not whether each sentence of the answer is true.",
+          "metrics": {
+            "words_without_citations": 14,
+            "sentences_heuristic": 1,
+            "within_three_sentences": true,
+            "has_citation": true,
+            "all_citations_valid": true,
+            "unknown_citations": [],
+            "validation_failed": false,
+            "generated_tokens": 28
+          }
+        },
+        "specialized": {
+          "question": "What number range and round limit does Hard difficulty use?",
+          "mode": "rag",
+          "profile": "specialized",
+          "status": "answered",
+          "answer": "Hard difficulty uses the numbers 1 to 50 and has a round limit of 5 [rules-difficulty-limits].",
+          "sources": [
+            {
+              "source_id": "rules-difficulty-limits",
+              "path": "knowledge/rules.md",
+              "title": "Difficulty ranges and round limits",
+              "score": 9.628,
+              "text": "The difficulty sets the range of possible numbers and the round limit.\nEasy uses the numbers 1 to 20 and allows 6 rounds. Normal uses the numbers\n1 to 100 and allows 8 rounds. Hard uses the numbers 1 to 50 and allows only\n5 rounds. Both secret numbers and every guess must be inside the range."
+            },
+            {
+              "source_id": "strategy-guesses-needed",
+              "path": "knowledge/strategy.md",
+              "title": "How many guesses Vector needs",
+              "score": 5.721,
+              "text": "On Easy, Vector needs at most 5 guesses, and the limit is 6 rounds, so it\nalways finds your number in time. On Normal, Vector needs at most 7\nguesses, and the limit is 8 rounds, so it also always finds your number in\ntime. On Hard, the range 1 to 50 sometimes needs 6 guesses, but the limit\nis only 5 rounds. So on Hard the limit of 5 rounds is not always enough\nfor Vector."
+            },
+            {
+              "source_id": "rules-valid-guesses",
+              "path": "knowledge/rules.md",
+              "title": "Valid guesses",
+              "score": 5.208,
+              "text": "A guess must be a whole number inside the range of the difficulty. An\nempty guess, text, a fraction such as 4.5, or a number outside the range\nis rejected with a message. A rejected guess does not use up a round."
+            }
+          ],
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are the Strategy Coach for the game Number Duel. Answer the player's question in English in at most three short sentences. If sources are given, use only those sources and cite each source you use by writing its ID in square brackets, exactly as it is written in the source list. If you are not sure, say so."
+            },
+            {
+              "role": "user",
+              "content": "Sources:\n\n[rules-starting-a-duel] Starting a duel\nBefore the duel you choose a difficulty and enter your secret number.\nVector's secret number is drawn at random only when you press Start Duel.\nDuring the duel the difficulty and both secret numbers do not change.\nVector's secret number is shown only after the duel ends.\n\nQuestion: What do I need to do before a duel starts?"
+            },
+            {
+              "role": "assistant",
+              "content": "Choose a difficulty, enter your secret number and press Start Duel. Vector's secret number is drawn at random only at that moment [rules-starting-a-duel]."
+            },
+            {
+              "role": "user",
+              "content": "Sources:\n\n[rules-new-duel] Starting over with New Duel\nThe New Duel button is available during a duel and after it ends. It\nclears the current duel and its history and goes back to the setup. The\nchosen difficulty is kept. New Duel does not change the Solo game.\n\nQuestion: Can I use New Duel in the middle of a duel?"
+            },
+            {
+              "role": "assistant",
+              "content": "Yes, New Duel works during a duel and after it ends. It clears the current duel and its history but keeps the chosen difficulty [rules-new-duel]."
+            },
+            {
+              "role": "user",
+              "content": "Sources:\n\n[reliability-logs] Logs without secrets\nThe safe service writes a log line for every round. An accepted round is\nlogged as duel_round_accepted with the round number and the new status. A\nrejected round is logged as duel_round_rejected with the round number and\nthe stage, engine or guardrail. The logs never contain secret numbers or\nfull game states.\n\nQuestion: Do the game logs show my secret number?"
+            },
+            {
+              "role": "assistant",
+              "content": "No, the logs never contain secret numbers or full game states. A rejected round is logged only with its round number and its stage, engine or guardrail [reliability-logs]."
+            },
+            {
+              "role": "user",
+              "content": "Sources:\n\n[rules-difficulty-limits] Difficulty ranges and round limits\nThe difficulty sets the range of possible numbers and the round limit.\nEasy uses the numbers 1 to 20 and allows 6 rounds. Normal uses the numbers\n1 to 100 and allows 8 rounds. Hard uses the numbers 1 to 50 and allows only\n5 rounds. Both secret numbers and every guess must be inside the range.\n\n[strategy-guesses-needed] How many guesses Vector needs\nOn Easy, Vector needs at most 5 guesses, and the limit is 6 rounds, so it\nalways finds your number in time. On Normal, Vector needs at most 7\nguesses, and the limit is 8 rounds, so it also always finds your number in\ntime. On Hard, the range 1 to 50 sometimes needs 6 guesses, but the limit\nis only 5 rounds. So on Hard the limit of 5 rounds is not always enough\nfor Vector.\n\n[rules-valid-guesses] Valid guesses\nA guess must be a whole number inside the range of the difficulty. An\nempty guess, text, a fraction such as 4.5, or a number outside the range\nis rejected with a message. A rejected guess does not use up a round.\n\nQuestion: What number range and round limit does Hard difficulty use?"
+            }
+          ],
+          "citations": [
+            "rules-difficulty-limits"
+          ],
+          "checks": [
+            {
+              "check": "answer is not empty",
+              "passed": true
+            },
+            {
+              "check": "no thinking block in the answer",
+              "passed": true
+            },
+            {
+              "check": "answer cites at least one source",
+              "passed": true
+            },
+            {
+              "check": "every cited ID is one of the found sources",
+              "passed": true,
+              "unknown_ids": []
+            }
+          ],
+          "generator_called": true,
+          "generation": {
+            "model": "Qwen/Qwen3-0.6B",
+            "revision": "c1899de289a04d12100db370d81485cdf75e47ca",
+            "device": "cpu",
+            "dtype": "float32",
+            "local_files_only": true,
+            "inference_mode": true,
+            "enable_thinking": false,
+            "do_sample": false,
+            "max_new_tokens": 128,
+            "prompt_tokens": 748,
+            "generated_tokens": 28,
+            "thinking_off": true,
+            "seconds": {
+              "load": 0.0,
+              "generate": 2.73
+            }
+          },
+          "environment": {
+            "python": "3.13.15",
+            "platform": "macOS-26.6.1-arm64-arm-64bit-Mach-O",
+            "machine": "arm64",
+            "torch": "2.15.0",
+            "transformers": "5.23.0",
+            "huggingface_hub": "2.4.0",
+            "tokenizers": "0.23.3",
+            "safetensors": "0.8.0",
+            "device": "cpu",
+            "torch_threads": 4,
+            "HF_HUB_OFFLINE": "1"
+          },
+          "note": "The citation check only checks the source IDs, not whether each sentence of the answer is true.",
+          "metrics": {
+            "words_without_citations": 15,
+            "sentences_heuristic": 1,
+            "within_three_sentences": true,
+            "has_citation": true,
+            "all_citations_valid": true,
+            "unknown_citations": [],
+            "validation_failed": false,
+            "generated_tokens": 28
+          }
+        }
+      }
+    },
+    {
+      "question": "Does choose_guess receive the player secret number?",
+      "sources": [
+        {
+          "source_id": "strategy-vector-inputs",
+          "path": "knowledge/strategy.md",
+          "title": "What Vector's strategy sees",
+          "score": 8.035,
+          "text": "Vector's strategy only sees the bounds of its range. The function that\npicks Vector's guess, choose_guess, receives only the low and high bounds.\nThe function that narrows the range, update_bounds, receives the bounds,\nthe guess and the hint. Neither function ever receives your secret number.\nThe game engine compares Vector's guess with your secret number to produce\nthe hint, like a referee."
+        },
+        {
+          "source_id": "rules-overview",
+          "path": "knowledge/rules.md",
+          "title": "What Number Duel is",
+          "score": 4.519,
+          "text": "Number Duel is a two-player number guessing game. You play against Vector,\na computer opponent. Each side picks a secret number, and each side tries\nto guess the other side's secret number first."
+        },
+        {
+          "source_id": "rules-starting-a-duel",
+          "path": "knowledge/rules.md",
+          "title": "Starting a duel",
+          "score": 4.143,
+          "text": "Before the duel you choose a difficulty and enter your secret number.\nVector's secret number is drawn at random only when you press Start Duel.\nDuring the duel the difficulty and both secret numbers do not change.\nVector's secret number is shown only after the duel ends."
+        }
+      ],
+      "same_sources_for_both_profiles": true,
+      "same_current_turn_for_both_profiles": true,
+      "runs": {
+        "baseline": {
+          "question": "Does choose_guess receive the player secret number?",
+          "mode": "rag",
+          "profile": "baseline",
+          "status": "answered",
+          "answer": "No, the player's secret number is not received by the `choose_guess` function. The `choose_guess` function only receives the low and high bounds of the range. The game engine compares the guess with the secret number to produce the hint, like a referee. [rules-overview] [rules-starting-a-duel]",
+          "sources": [
+            {
+              "source_id": "strategy-vector-inputs",
+              "path": "knowledge/strategy.md",
+              "title": "What Vector's strategy sees",
+              "score": 8.035,
+              "text": "Vector's strategy only sees the bounds of its range. The function that\npicks Vector's guess, choose_guess, receives only the low and high bounds.\nThe function that narrows the range, update_bounds, receives the bounds,\nthe guess and the hint. Neither function ever receives your secret number.\nThe game engine compares Vector's guess with your secret number to produce\nthe hint, like a referee."
+            },
+            {
+              "source_id": "rules-overview",
+              "path": "knowledge/rules.md",
+              "title": "What Number Duel is",
+              "score": 4.519,
+              "text": "Number Duel is a two-player number guessing game. You play against Vector,\na computer opponent. Each side picks a secret number, and each side tries\nto guess the other side's secret number first."
+            },
+            {
+              "source_id": "rules-starting-a-duel",
+              "path": "knowledge/rules.md",
+              "title": "Starting a duel",
+              "score": 4.143,
+              "text": "Before the duel you choose a difficulty and enter your secret number.\nVector's secret number is drawn at random only when you press Start Duel.\nDuring the duel the difficulty and both secret numbers do not change.\nVector's secret number is shown only after the duel ends."
+            }
+          ],
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are the Strategy Coach for the game Number Duel. Answer the player's question in English in at most three short sentences. If sources are given, use only those sources and cite each source you use by writing its ID in square brackets, exactly as it is written in the source list. If you are not sure, say so."
+            },
+            {
+              "role": "user",
+              "content": "Sources:\n\n[strategy-vector-inputs] What Vector's strategy sees\nVector's strategy only sees the bounds of its range. The function that\npicks Vector's guess, choose_guess, receives only the low and high bounds.\nThe function that narrows the range, update_bounds, receives the bounds,\nthe guess and the hint. Neither function ever receives your secret number.\nThe game engine compares Vector's guess with your secret number to produce\nthe hint, like a referee.\n\n[rules-overview] What Number Duel is\nNumber Duel is a two-player number guessing game. You play against Vector,\na computer opponent. Each side picks a secret number, and each side tries\nto guess the other side's secret number first.\n\n[rules-starting-a-duel] Starting a duel\nBefore the duel you choose a difficulty and enter your secret number.\nVector's secret number is drawn at random only when you press Start Duel.\nDuring the duel the difficulty and both secret numbers do not change.\nVector's secret number is shown only after the duel ends.\n\nQuestion: Does choose_guess receive the player secret number?"
+            }
+          ],
+          "citations": [
+            "rules-overview",
+            "rules-starting-a-duel"
+          ],
+          "checks": [
+            {
+              "check": "answer is not empty",
+              "passed": true
+            },
+            {
+              "check": "no thinking block in the answer",
+              "passed": true
+            },
+            {
+              "check": "answer cites at least one source",
+              "passed": true
+            },
+            {
+              "check": "every cited ID is one of the found sources",
+              "passed": true,
+              "unknown_ids": []
+            }
+          ],
+          "generator_called": true,
+          "generation": {
+            "model": "Qwen/Qwen3-0.6B",
+            "revision": "c1899de289a04d12100db370d81485cdf75e47ca",
+            "device": "cpu",
+            "dtype": "float32",
+            "local_files_only": true,
+            "inference_mode": true,
+            "enable_thinking": false,
+            "do_sample": false,
+            "max_new_tokens": 128,
+            "prompt_tokens": 307,
+            "generated_tokens": 68,
+            "thinking_off": true,
+            "seconds": {
+              "load": 0.0,
+              "generate": 5.21
+            }
+          },
+          "environment": {
+            "python": "3.13.15",
+            "platform": "macOS-26.6.1-arm64-arm-64bit-Mach-O",
+            "machine": "arm64",
+            "torch": "2.15.0",
+            "transformers": "5.23.0",
+            "huggingface_hub": "2.4.0",
+            "tokenizers": "0.23.3",
+            "safetensors": "0.8.0",
+            "device": "cpu",
+            "torch_threads": 4,
+            "HF_HUB_OFFLINE": "1"
+          },
+          "note": "The citation check only checks the source IDs, not whether each sentence of the answer is true.",
+          "metrics": {
+            "words_without_citations": 44,
+            "sentences_heuristic": 3,
+            "within_three_sentences": true,
+            "has_citation": true,
+            "all_citations_valid": true,
+            "unknown_citations": [],
+            "validation_failed": false,
+            "generated_tokens": 68
+          }
+        },
+        "specialized": {
+          "question": "Does choose_guess receive the player secret number?",
+          "mode": "rag",
+          "profile": "specialized",
+          "status": "answered",
+          "answer": "No, Vector's strategy only sees the bounds of its range. The function that picks Vector's guess, choose_guess, receives only the low and high bounds. The function that narrows the range, update_bounds, receives the bounds, the guess, and the hint. Neither function ever receives your secret number. [strategy-vector-inputs]",
+          "sources": [
+            {
+              "source_id": "strategy-vector-inputs",
+              "path": "knowledge/strategy.md",
+              "title": "What Vector's strategy sees",
+              "score": 8.035,
+              "text": "Vector's strategy only sees the bounds of its range. The function that\npicks Vector's guess, choose_guess, receives only the low and high bounds.\nThe function that narrows the range, update_bounds, receives the bounds,\nthe guess and the hint. Neither function ever receives your secret number.\nThe game engine compares Vector's guess with your secret number to produce\nthe hint, like a referee."
+            },
+            {
+              "source_id": "rules-overview",
+              "path": "knowledge/rules.md",
+              "title": "What Number Duel is",
+              "score": 4.519,
+              "text": "Number Duel is a two-player number guessing game. You play against Vector,\na computer opponent. Each side picks a secret number, and each side tries\nto guess the other side's secret number first."
+            },
+            {
+              "source_id": "rules-starting-a-duel",
+              "path": "knowledge/rules.md",
+              "title": "Starting a duel",
+              "score": 4.143,
+              "text": "Before the duel you choose a difficulty and enter your secret number.\nVector's secret number is drawn at random only when you press Start Duel.\nDuring the duel the difficulty and both secret numbers do not change.\nVector's secret number is shown only after the duel ends."
+            }
+          ],
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are the Strategy Coach for the game Number Duel. Answer the player's question in English in at most three short sentences. If sources are given, use only those sources and cite each source you use by writing its ID in square brackets, exactly as it is written in the source list. If you are not sure, say so."
+            },
+            {
+              "role": "user",
+              "content": "Sources:\n\n[rules-starting-a-duel] Starting a duel\nBefore the duel you choose a difficulty and enter your secret number.\nVector's secret number is drawn at random only when you press Start Duel.\nDuring the duel the difficulty and both secret numbers do not change.\nVector's secret number is shown only after the duel ends.\n\nQuestion: What do I need to do before a duel starts?"
+            },
+            {
+              "role": "assistant",
+              "content": "Choose a difficulty, enter your secret number and press Start Duel. Vector's secret number is drawn at random only at that moment [rules-starting-a-duel]."
+            },
+            {
+              "role": "user",
+              "content": "Sources:\n\n[rules-new-duel] Starting over with New Duel\nThe New Duel button is available during a duel and after it ends. It\nclears the current duel and its history and goes back to the setup. The\nchosen difficulty is kept. New Duel does not change the Solo game.\n\nQuestion: Can I use New Duel in the middle of a duel?"
+            },
+            {
+              "role": "assistant",
+              "content": "Yes, New Duel works during a duel and after it ends. It clears the current duel and its history but keeps the chosen difficulty [rules-new-duel]."
+            },
+            {
+              "role": "user",
+              "content": "Sources:\n\n[reliability-logs] Logs without secrets\nThe safe service writes a log line for every round. An accepted round is\nlogged as duel_round_accepted with the round number and the new status. A\nrejected round is logged as duel_round_rejected with the round number and\nthe stage, engine or guardrail. The logs never contain secret numbers or\nfull game states.\n\nQuestion: Do the game logs show my secret number?"
+            },
+            {
+              "role": "assistant",
+              "content": "No, the logs never contain secret numbers or full game states. A rejected round is logged only with its round number and its stage, engine or guardrail [reliability-logs]."
+            },
+            {
+              "role": "user",
+              "content": "Sources:\n\n[strategy-vector-inputs] What Vector's strategy sees\nVector's strategy only sees the bounds of its range. The function that\npicks Vector's guess, choose_guess, receives only the low and high bounds.\nThe function that narrows the range, update_bounds, receives the bounds,\nthe guess and the hint. Neither function ever receives your secret number.\nThe game engine compares Vector's guess with your secret number to produce\nthe hint, like a referee.\n\n[rules-overview] What Number Duel is\nNumber Duel is a two-player number guessing game. You play against Vector,\na computer opponent. Each side picks a secret number, and each side tries\nto guess the other side's secret number first.\n\n[rules-starting-a-duel] Starting a duel\nBefore the duel you choose a difficulty and enter your secret number.\nVector's secret number is drawn at random only when you press Start Duel.\nDuring the duel the difficulty and both secret numbers do not change.\nVector's secret number is shown only after the duel ends.\n\nQuestion: Does choose_guess receive the player secret number?"
+            }
+          ],
+          "citations": [
+            "strategy-vector-inputs"
+          ],
+          "checks": [
+            {
+              "check": "answer is not empty",
+              "passed": true
+            },
+            {
+              "check": "no thinking block in the answer",
+              "passed": true
+            },
+            {
+              "check": "answer cites at least one source",
+              "passed": true
+            },
+            {
+              "check": "every cited ID is one of the found sources",
+              "passed": true,
+              "unknown_ids": []
+            }
+          ],
+          "generator_called": true,
+          "generation": {
+            "model": "Qwen/Qwen3-0.6B",
+            "revision": "c1899de289a04d12100db370d81485cdf75e47ca",
+            "device": "cpu",
+            "dtype": "float32",
+            "local_files_only": true,
+            "inference_mode": true,
+            "enable_thinking": false,
+            "do_sample": false,
+            "max_new_tokens": 128,
+            "prompt_tokens": 686,
+            "generated_tokens": 70,
+            "thinking_off": true,
+            "seconds": {
+              "load": 0.0,
+              "generate": 6.5
+            }
+          },
+          "environment": {
+            "python": "3.13.15",
+            "platform": "macOS-26.6.1-arm64-arm-64bit-Mach-O",
+            "machine": "arm64",
+            "torch": "2.15.0",
+            "transformers": "5.23.0",
+            "huggingface_hub": "2.4.0",
+            "tokenizers": "0.23.3",
+            "safetensors": "0.8.0",
+            "device": "cpu",
+            "torch_threads": 4,
+            "HF_HUB_OFFLINE": "1"
+          },
+          "note": "The citation check only checks the source IDs, not whether each sentence of the answer is true.",
+          "metrics": {
+            "words_without_citations": 48,
+            "sentences_heuristic": 4,
+            "within_three_sentences": false,
+            "has_citation": true,
+            "all_citations_valid": true,
+            "unknown_citations": [],
+            "validation_failed": false,
+            "generated_tokens": 70
+          }
+        }
+      }
+    },
+    {
+      "question": "Must the inspector require Vector to guess the exact midpoint?",
+      "sources": [
+        {
+          "source_id": "reliability-midpoint-not-required",
+          "path": "knowledge/reliability.md",
+          "title": "Exact middle not required",
+          "score": 9.434,
+          "text": "The inspector checks that each of Vector's guesses lies inside the range\nthat is still possible at that moment. It does not require the guess to be\nexactly the middle of that range. Another strategy that stays inside the\nrange would also pass the inspector."
+        },
+        {
+          "source_id": "reliability-inspector-checks",
+          "path": "knowledge/reliability.md",
+          "title": "What the inspector checks",
+          "score": 4.436,
+          "text": "The inspector checks that the duel was still running and had rounds left,\nthat the settings and both secret numbers did not change, that exactly one\nround was added and earlier rounds stayed the same, that both guesses are\nwhole numbers inside the range, that both hints match the secret numbers,\nthat Vector's range matches its whole history, and that the status\n(playing, win or draw) is correct."
+        },
+        {
+          "source_id": "strategy-your-guesses",
+          "path": "knowledge/strategy.md",
+          "title": "Guessing Vector's number yourself",
+          "score": 2.846,
+          "text": "The fastest safe way to find Vector's number is the same method: guess the\nmiddle of the numbers that are still possible and use each hint to cut the\nrange in half. With this method you also need at most 5 guesses on Easy,\n7 on Normal and 6 on Hard. On Easy and Normal Vector always finds your\nnumber within the limit, so to win you must guess its number in an\nearlier round than it guesses yours. Guessing in the same round gives a\ndraw."
+        }
+      ],
+      "same_sources_for_both_profiles": true,
+      "same_current_turn_for_both_profiles": true,
+      "runs": {
+        "baseline": {
+          "question": "Must the inspector require Vector to guess the exact midpoint?",
+          "mode": "rag",
+          "profile": "baseline",
+          "status": "answered",
+          "answer": "The inspector does not require Vector to guess the exact midpoint; instead, they check that Vector's guesses lie within the range that is still possible at that moment. [reliability-midpoint-not-required]  \n\nThis strategy stays inside the range and passes the inspector regardless of whether the guess is the exact midpoint or not. [reliability-inspector-checks]  \n\nYes, the inspector checks Vector's guesses to ensure they are within the range, not necessarily requiring them to be the exact midpoint. [reliability-inspector-checks]",
+          "sources": [
+            {
+              "source_id": "reliability-midpoint-not-required",
+              "path": "knowledge/reliability.md",
+              "title": "Exact middle not required",
+              "score": 9.434,
+              "text": "The inspector checks that each of Vector's guesses lies inside the range\nthat is still possible at that moment. It does not require the guess to be\nexactly the middle of that range. Another strategy that stays inside the\nrange would also pass the inspector."
+            },
+            {
+              "source_id": "reliability-inspector-checks",
+              "path": "knowledge/reliability.md",
+              "title": "What the inspector checks",
+              "score": 4.436,
+              "text": "The inspector checks that the duel was still running and had rounds left,\nthat the settings and both secret numbers did not change, that exactly one\nround was added and earlier rounds stayed the same, that both guesses are\nwhole numbers inside the range, that both hints match the secret numbers,\nthat Vector's range matches its whole history, and that the status\n(playing, win or draw) is correct."
+            },
+            {
+              "source_id": "strategy-your-guesses",
+              "path": "knowledge/strategy.md",
+              "title": "Guessing Vector's number yourself",
+              "score": 2.846,
+              "text": "The fastest safe way to find Vector's number is the same method: guess the\nmiddle of the numbers that are still possible and use each hint to cut the\nrange in half. With this method you also need at most 5 guesses on Easy,\n7 on Normal and 6 on Hard. On Easy and Normal Vector always finds your\nnumber within the limit, so to win you must guess its number in an\nearlier round than it guesses yours. Guessing in the same round gives a\ndraw."
+            }
+          ],
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are the Strategy Coach for the game Number Duel. Answer the player's question in English in at most three short sentences. If sources are given, use only those sources and cite each source you use by writing its ID in square brackets, exactly as it is written in the source list. If you are not sure, say so."
+            },
+            {
+              "role": "user",
+              "content": "Sources:\n\n[reliability-midpoint-not-required] Exact middle not required\nThe inspector checks that each of Vector's guesses lies inside the range\nthat is still possible at that moment. It does not require the guess to be\nexactly the middle of that range. Another strategy that stays inside the\nrange would also pass the inspector.\n\n[reliability-inspector-checks] What the inspector checks\nThe inspector checks that the duel was still running and had rounds left,\nthat the settings and both secret numbers did not change, that exactly one\nround was added and earlier rounds stayed the same, that both guesses are\nwhole numbers inside the range, that both hints match the secret numbers,\nthat Vector's range matches its whole history, and that the status\n(playing, win or draw) is correct.\n\n[strategy-your-guesses] Guessing Vector's number yourself\nThe fastest safe way to find Vector's number is the same method: guess the\nmiddle of the numbers that are still possible and use each hint to cut the\nrange in half. With this method you also need at most 5 guesses on Easy,\n7 on Normal and 6 on Hard. On Easy and Normal Vector always finds your\nnumber within the limit, so to win you must guess its number in an\nearlier round than it guesses yours. Guessing in the same round gives a\ndraw.\n\nQuestion: Must the inspector require Vector to guess the exact midpoint?"
+            }
+          ],
+          "citations": [
+            "reliability-midpoint-not-required",
+            "reliability-inspector-checks",
+            "reliability-inspector-checks"
+          ],
+          "checks": [
+            {
+              "check": "answer is not empty",
+              "passed": true
+            },
+            {
+              "check": "no thinking block in the answer",
+              "passed": true
+            },
+            {
+              "check": "answer cites at least one source",
+              "passed": true
+            },
+            {
+              "check": "every cited ID is one of the found sources",
+              "passed": true,
+              "unknown_ids": []
+            }
+          ],
+          "generator_called": true,
+          "generation": {
+            "model": "Qwen/Qwen3-0.6B",
+            "revision": "c1899de289a04d12100db370d81485cdf75e47ca",
+            "device": "cpu",
+            "dtype": "float32",
+            "local_files_only": true,
+            "inference_mode": true,
+            "enable_thinking": false,
+            "do_sample": false,
+            "max_new_tokens": 128,
+            "prompt_tokens": 381,
+            "generated_tokens": 111,
+            "thinking_off": true,
+            "seconds": {
+              "load": 0.0,
+              "generate": 8.76
+            }
+          },
+          "environment": {
+            "python": "3.13.15",
+            "platform": "macOS-26.6.1-arm64-arm-64bit-Mach-O",
+            "machine": "arm64",
+            "torch": "2.15.0",
+            "transformers": "5.23.0",
+            "huggingface_hub": "2.4.0",
+            "tokenizers": "0.23.3",
+            "safetensors": "0.8.0",
+            "device": "cpu",
+            "torch_threads": 4,
+            "HF_HUB_OFFLINE": "1"
+          },
+          "note": "The citation check only checks the source IDs, not whether each sentence of the answer is true.",
+          "metrics": {
+            "words_without_citations": 71,
+            "sentences_heuristic": 3,
+            "within_three_sentences": true,
+            "has_citation": true,
+            "all_citations_valid": true,
+            "unknown_citations": [],
+            "validation_failed": false,
+            "generated_tokens": 111
+          }
+        },
+        "specialized": {
+          "question": "Must the inspector require Vector to guess the exact midpoint?",
+          "mode": "rag",
+          "profile": "specialized",
+          "status": "answered",
+          "answer": "The inspector does not require Vector to guess the exact midpoint; it only checks if the guesses lie within the range that is still possible at that moment [reliability-midpoint-not-required]. The inspector also checks for other conditions like correct guesses and status [reliability-inspector-checks]. Guessing in the same round gives a draw, and the fastest method is to guess the middle of the remaining range [strategy-your-guesses].",
+          "sources": [
+            {
+              "source_id": "reliability-midpoint-not-required",
+              "path": "knowledge/reliability.md",
+              "title": "Exact middle not required",
+              "score": 9.434,
+              "text": "The inspector checks that each of Vector's guesses lies inside the range\nthat is still possible at that moment. It does not require the guess to be\nexactly the middle of that range. Another strategy that stays inside the\nrange would also pass the inspector."
+            },
+            {
+              "source_id": "reliability-inspector-checks",
+              "path": "knowledge/reliability.md",
+              "title": "What the inspector checks",
+              "score": 4.436,
+              "text": "The inspector checks that the duel was still running and had rounds left,\nthat the settings and both secret numbers did not change, that exactly one\nround was added and earlier rounds stayed the same, that both guesses are\nwhole numbers inside the range, that both hints match the secret numbers,\nthat Vector's range matches its whole history, and that the status\n(playing, win or draw) is correct."
+            },
+            {
+              "source_id": "strategy-your-guesses",
+              "path": "knowledge/strategy.md",
+              "title": "Guessing Vector's number yourself",
+              "score": 2.846,
+              "text": "The fastest safe way to find Vector's number is the same method: guess the\nmiddle of the numbers that are still possible and use each hint to cut the\nrange in half. With this method you also need at most 5 guesses on Easy,\n7 on Normal and 6 on Hard. On Easy and Normal Vector always finds your\nnumber within the limit, so to win you must guess its number in an\nearlier round than it guesses yours. Guessing in the same round gives a\ndraw."
+            }
+          ],
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are the Strategy Coach for the game Number Duel. Answer the player's question in English in at most three short sentences. If sources are given, use only those sources and cite each source you use by writing its ID in square brackets, exactly as it is written in the source list. If you are not sure, say so."
+            },
+            {
+              "role": "user",
+              "content": "Sources:\n\n[rules-starting-a-duel] Starting a duel\nBefore the duel you choose a difficulty and enter your secret number.\nVector's secret number is drawn at random only when you press Start Duel.\nDuring the duel the difficulty and both secret numbers do not change.\nVector's secret number is shown only after the duel ends.\n\nQuestion: What do I need to do before a duel starts?"
+            },
+            {
+              "role": "assistant",
+              "content": "Choose a difficulty, enter your secret number and press Start Duel. Vector's secret number is drawn at random only at that moment [rules-starting-a-duel]."
+            },
+            {
+              "role": "user",
+              "content": "Sources:\n\n[rules-new-duel] Starting over with New Duel\nThe New Duel button is available during a duel and after it ends. It\nclears the current duel and its history and goes back to the setup. The\nchosen difficulty is kept. New Duel does not change the Solo game.\n\nQuestion: Can I use New Duel in the middle of a duel?"
+            },
+            {
+              "role": "assistant",
+              "content": "Yes, New Duel works during a duel and after it ends. It clears the current duel and its history but keeps the chosen difficulty [rules-new-duel]."
+            },
+            {
+              "role": "user",
+              "content": "Sources:\n\n[reliability-logs] Logs without secrets\nThe safe service writes a log line for every round. An accepted round is\nlogged as duel_round_accepted with the round number and the new status. A\nrejected round is logged as duel_round_rejected with the round number and\nthe stage, engine or guardrail. The logs never contain secret numbers or\nfull game states.\n\nQuestion: Do the game logs show my secret number?"
+            },
+            {
+              "role": "assistant",
+              "content": "No, the logs never contain secret numbers or full game states. A rejected round is logged only with its round number and its stage, engine or guardrail [reliability-logs]."
+            },
+            {
+              "role": "user",
+              "content": "Sources:\n\n[reliability-midpoint-not-required] Exact middle not required\nThe inspector checks that each of Vector's guesses lies inside the range\nthat is still possible at that moment. It does not require the guess to be\nexactly the middle of that range. Another strategy that stays inside the\nrange would also pass the inspector.\n\n[reliability-inspector-checks] What the inspector checks\nThe inspector checks that the duel was still running and had rounds left,\nthat the settings and both secret numbers did not change, that exactly one\nround was added and earlier rounds stayed the same, that both guesses are\nwhole numbers inside the range, that both hints match the secret numbers,\nthat Vector's range matches its whole history, and that the status\n(playing, win or draw) is correct.\n\n[strategy-your-guesses] Guessing Vector's number yourself\nThe fastest safe way to find Vector's number is the same method: guess the\nmiddle of the numbers that are still possible and use each hint to cut the\nrange in half. With this method you also need at most 5 guesses on Easy,\n7 on Normal and 6 on Hard. On Easy and Normal Vector always finds your\nnumber within the limit, so to win you must guess its number in an\nearlier round than it guesses yours. Guessing in the same round gives a\ndraw.\n\nQuestion: Must the inspector require Vector to guess the exact midpoint?"
+            }
+          ],
+          "citations": [
+            "reliability-midpoint-not-required",
+            "reliability-inspector-checks",
+            "strategy-your-guesses"
+          ],
+          "checks": [
+            {
+              "check": "answer is not empty",
+              "passed": true
+            },
+            {
+              "check": "no thinking block in the answer",
+              "passed": true
+            },
+            {
+              "check": "answer cites at least one source",
+              "passed": true
+            },
+            {
+              "check": "every cited ID is one of the found sources",
+              "passed": true,
+              "unknown_ids": []
+            }
+          ],
+          "generator_called": true,
+          "generation": {
+            "model": "Qwen/Qwen3-0.6B",
+            "revision": "c1899de289a04d12100db370d81485cdf75e47ca",
+            "device": "cpu",
+            "dtype": "float32",
+            "local_files_only": true,
+            "inference_mode": true,
+            "enable_thinking": false,
+            "do_sample": false,
+            "max_new_tokens": 128,
+            "prompt_tokens": 760,
+            "generated_tokens": 91,
+            "thinking_off": true,
+            "seconds": {
+              "load": 0.0,
+              "generate": 8.34
+            }
+          },
+          "environment": {
+            "python": "3.13.15",
+            "platform": "macOS-26.6.1-arm64-arm-64bit-Mach-O",
+            "machine": "arm64",
+            "torch": "2.15.0",
+            "transformers": "5.23.0",
+            "huggingface_hub": "2.4.0",
+            "tokenizers": "0.23.3",
+            "safetensors": "0.8.0",
+            "device": "cpu",
+            "torch_threads": 4,
+            "HF_HUB_OFFLINE": "1"
+          },
+          "note": "The citation check only checks the source IDs, not whether each sentence of the answer is true.",
+          "metrics": {
+            "words_without_citations": 61,
+            "sentences_heuristic": 3,
+            "within_three_sentences": true,
+            "has_citation": true,
+            "all_citations_valid": true,
+            "unknown_citations": [],
+            "validation_failed": false,
+            "generated_tokens": 91
+          }
+        }
+      }
+    },
+    {
+      "question": "Does the Solo game pass through the duel inspector?",
+      "sources": [
+        {
+          "source_id": "reliability-solo-scope",
+          "path": "knowledge/reliability.md",
+          "title": "The Solo game is not inspected",
+          "score": 14.928,
+          "text": "Only Number Duel rounds go through the inspector. The Solo game uses its\nown simpler rules and does not pass through the duel inspector."
+        },
+        {
+          "source_id": "reliability-accepting-a-round",
+          "path": "knowledge/reliability.md",
+          "title": "How a duel round is accepted",
+          "score": 6.475,
+          "text": "Every duel round goes through a safe service. The game engine first builds\na candidate state for the new round. An independent inspector then checks\nthe step from the old state to the candidate. Only if the inspector\naccepts the step is the candidate saved as the new duel state."
+        },
+        {
+          "source_id": "rules-new-duel",
+          "path": "knowledge/rules.md",
+          "title": "Starting over with New Duel",
+          "score": 5.208,
+          "text": "The New Duel button is available during a duel and after it ends. It\nclears the current duel and its history and goes back to the setup. The\nchosen difficulty is kept. New Duel does not change the Solo game."
+        }
+      ],
+      "same_sources_for_both_profiles": true,
+      "same_current_turn_for_both_profiles": true,
+      "runs": {
+        "baseline": {
+          "question": "Does the Solo game pass through the duel inspector?",
+          "mode": "rag",
+          "profile": "baseline",
+          "status": "answered",
+          "answer": "The Solo game does not pass through the duel inspector, as it uses its own simpler rules and does not go through the inspector. [reliability-solo-scope]",
+          "sources": [
+            {
+              "source_id": "reliability-solo-scope",
+              "path": "knowledge/reliability.md",
+              "title": "The Solo game is not inspected",
+              "score": 14.928,
+              "text": "Only Number Duel rounds go through the inspector. The Solo game uses its\nown simpler rules and does not pass through the duel inspector."
+            },
+            {
+              "source_id": "reliability-accepting-a-round",
+              "path": "knowledge/reliability.md",
+              "title": "How a duel round is accepted",
+              "score": 6.475,
+              "text": "Every duel round goes through a safe service. The game engine first builds\na candidate state for the new round. An independent inspector then checks\nthe step from the old state to the candidate. Only if the inspector\naccepts the step is the candidate saved as the new duel state."
+            },
+            {
+              "source_id": "rules-new-duel",
+              "path": "knowledge/rules.md",
+              "title": "Starting over with New Duel",
+              "score": 5.208,
+              "text": "The New Duel button is available during a duel and after it ends. It\nclears the current duel and its history and goes back to the setup. The\nchosen difficulty is kept. New Duel does not change the Solo game."
+            }
+          ],
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are the Strategy Coach for the game Number Duel. Answer the player's question in English in at most three short sentences. If sources are given, use only those sources and cite each source you use by writing its ID in square brackets, exactly as it is written in the source list. If you are not sure, say so."
+            },
+            {
+              "role": "user",
+              "content": "Sources:\n\n[reliability-solo-scope] The Solo game is not inspected\nOnly Number Duel rounds go through the inspector. The Solo game uses its\nown simpler rules and does not pass through the duel inspector.\n\n[reliability-accepting-a-round] How a duel round is accepted\nEvery duel round goes through a safe service. The game engine first builds\na candidate state for the new round. An independent inspector then checks\nthe step from the old state to the candidate. Only if the inspector\naccepts the step is the candidate saved as the new duel state.\n\n[rules-new-duel] Starting over with New Duel\nThe New Duel button is available during a duel and after it ends. It\nclears the current duel and its history and goes back to the setup. The\nchosen difficulty is kept. New Duel does not change the Solo game.\n\nQuestion: Does the Solo game pass through the duel inspector?"
+            }
+          ],
+          "citations": [
+            "reliability-solo-scope"
+          ],
+          "checks": [
+            {
+              "check": "answer is not empty",
+              "passed": true
+            },
+            {
+              "check": "no thinking block in the answer",
+              "passed": true
+            },
+            {
+              "check": "answer cites at least one source",
+              "passed": true
+            },
+            {
+              "check": "every cited ID is one of the found sources",
+              "passed": true,
+              "unknown_ids": []
+            }
+          ],
+          "generator_called": true,
+          "generation": {
+            "model": "Qwen/Qwen3-0.6B",
+            "revision": "c1899de289a04d12100db370d81485cdf75e47ca",
+            "device": "cpu",
+            "dtype": "float32",
+            "local_files_only": true,
+            "inference_mode": true,
+            "enable_thinking": false,
+            "do_sample": false,
+            "max_new_tokens": 128,
+            "prompt_tokens": 275,
+            "generated_tokens": 36,
+            "thinking_off": true,
+            "seconds": {
+              "load": 0.0,
+              "generate": 2.58
+            }
+          },
+          "environment": {
+            "python": "3.13.15",
+            "platform": "macOS-26.6.1-arm64-arm-64bit-Mach-O",
+            "machine": "arm64",
+            "torch": "2.15.0",
+            "transformers": "5.23.0",
+            "huggingface_hub": "2.4.0",
+            "tokenizers": "0.23.3",
+            "safetensors": "0.8.0",
+            "device": "cpu",
+            "torch_threads": 4,
+            "HF_HUB_OFFLINE": "1"
+          },
+          "note": "The citation check only checks the source IDs, not whether each sentence of the answer is true.",
+          "metrics": {
+            "words_without_citations": 24,
+            "sentences_heuristic": 1,
+            "within_three_sentences": true,
+            "has_citation": true,
+            "all_citations_valid": true,
+            "unknown_citations": [],
+            "validation_failed": false,
+            "generated_tokens": 36
+          }
+        },
+        "specialized": {
+          "question": "Does the Solo game pass through the duel inspector?",
+          "mode": "rag",
+          "profile": "specialized",
+          "status": "answered",
+          "answer": "The Solo game does not pass through the duel inspector. Only Number Duel rounds go through the inspector, and the Solo game uses its own simpler rules [reliability-solo-scope].",
+          "sources": [
+            {
+              "source_id": "reliability-solo-scope",
+              "path": "knowledge/reliability.md",
+              "title": "The Solo game is not inspected",
+              "score": 14.928,
+              "text": "Only Number Duel rounds go through the inspector. The Solo game uses its\nown simpler rules and does not pass through the duel inspector."
+            },
+            {
+              "source_id": "reliability-accepting-a-round",
+              "path": "knowledge/reliability.md",
+              "title": "How a duel round is accepted",
+              "score": 6.475,
+              "text": "Every duel round goes through a safe service. The game engine first builds\na candidate state for the new round. An independent inspector then checks\nthe step from the old state to the candidate. Only if the inspector\naccepts the step is the candidate saved as the new duel state."
+            },
+            {
+              "source_id": "rules-new-duel",
+              "path": "knowledge/rules.md",
+              "title": "Starting over with New Duel",
+              "score": 5.208,
+              "text": "The New Duel button is available during a duel and after it ends. It\nclears the current duel and its history and goes back to the setup. The\nchosen difficulty is kept. New Duel does not change the Solo game."
+            }
+          ],
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are the Strategy Coach for the game Number Duel. Answer the player's question in English in at most three short sentences. If sources are given, use only those sources and cite each source you use by writing its ID in square brackets, exactly as it is written in the source list. If you are not sure, say so."
+            },
+            {
+              "role": "user",
+              "content": "Sources:\n\n[rules-starting-a-duel] Starting a duel\nBefore the duel you choose a difficulty and enter your secret number.\nVector's secret number is drawn at random only when you press Start Duel.\nDuring the duel the difficulty and both secret numbers do not change.\nVector's secret number is shown only after the duel ends.\n\nQuestion: What do I need to do before a duel starts?"
+            },
+            {
+              "role": "assistant",
+              "content": "Choose a difficulty, enter your secret number and press Start Duel. Vector's secret number is drawn at random only at that moment [rules-starting-a-duel]."
+            },
+            {
+              "role": "user",
+              "content": "Sources:\n\n[rules-new-duel] Starting over with New Duel\nThe New Duel button is available during a duel and after it ends. It\nclears the current duel and its history and goes back to the setup. The\nchosen difficulty is kept. New Duel does not change the Solo game.\n\nQuestion: Can I use New Duel in the middle of a duel?"
+            },
+            {
+              "role": "assistant",
+              "content": "Yes, New Duel works during a duel and after it ends. It clears the current duel and its history but keeps the chosen difficulty [rules-new-duel]."
+            },
+            {
+              "role": "user",
+              "content": "Sources:\n\n[reliability-logs] Logs without secrets\nThe safe service writes a log line for every round. An accepted round is\nlogged as duel_round_accepted with the round number and the new status. A\nrejected round is logged as duel_round_rejected with the round number and\nthe stage, engine or guardrail. The logs never contain secret numbers or\nfull game states.\n\nQuestion: Do the game logs show my secret number?"
+            },
+            {
+              "role": "assistant",
+              "content": "No, the logs never contain secret numbers or full game states. A rejected round is logged only with its round number and its stage, engine or guardrail [reliability-logs]."
+            },
+            {
+              "role": "user",
+              "content": "Sources:\n\n[reliability-solo-scope] The Solo game is not inspected\nOnly Number Duel rounds go through the inspector. The Solo game uses its\nown simpler rules and does not pass through the duel inspector.\n\n[reliability-accepting-a-round] How a duel round is accepted\nEvery duel round goes through a safe service. The game engine first builds\na candidate state for the new round. An independent inspector then checks\nthe step from the old state to the candidate. Only if the inspector\naccepts the step is the candidate saved as the new duel state.\n\n[rules-new-duel] Starting over with New Duel\nThe New Duel button is available during a duel and after it ends. It\nclears the current duel and its history and goes back to the setup. The\nchosen difficulty is kept. New Duel does not change the Solo game.\n\nQuestion: Does the Solo game pass through the duel inspector?"
+            }
+          ],
+          "citations": [
+            "reliability-solo-scope"
+          ],
+          "checks": [
+            {
+              "check": "answer is not empty",
+              "passed": true
+            },
+            {
+              "check": "no thinking block in the answer",
+              "passed": true
+            },
+            {
+              "check": "answer cites at least one source",
+              "passed": true
+            },
+            {
+              "check": "every cited ID is one of the found sources",
+              "passed": true,
+              "unknown_ids": []
+            }
+          ],
+          "generator_called": true,
+          "generation": {
+            "model": "Qwen/Qwen3-0.6B",
+            "revision": "c1899de289a04d12100db370d81485cdf75e47ca",
+            "device": "cpu",
+            "dtype": "float32",
+            "local_files_only": true,
+            "inference_mode": true,
+            "enable_thinking": false,
+            "do_sample": false,
+            "max_new_tokens": 128,
+            "prompt_tokens": 654,
+            "generated_tokens": 39,
+            "thinking_off": true,
+            "seconds": {
+              "load": 0.0,
+              "generate": 3.36
+            }
+          },
+          "environment": {
+            "python": "3.13.15",
+            "platform": "macOS-26.6.1-arm64-arm-64bit-Mach-O",
+            "machine": "arm64",
+            "torch": "2.15.0",
+            "transformers": "5.23.0",
+            "huggingface_hub": "2.4.0",
+            "tokenizers": "0.23.3",
+            "safetensors": "0.8.0",
+            "device": "cpu",
+            "torch_threads": 4,
+            "HF_HUB_OFFLINE": "1"
+          },
+          "note": "The citation check only checks the source IDs, not whether each sentence of the answer is true.",
+          "metrics": {
+            "words_without_citations": 27,
+            "sentences_heuristic": 2,
+            "within_three_sentences": true,
+            "has_citation": true,
+            "all_citations_valid": true,
+            "unknown_citations": [],
+            "validation_failed": false,
+            "generated_tokens": 39
+          }
+        }
+      }
+    },
+    {
+      "question": "Can I submit a fractional guess, and does it use a round?",
+      "sources": [
+        {
+          "source_id": "rules-difficulty-limits",
+          "path": "knowledge/rules.md",
+          "title": "Difficulty ranges and round limits",
+          "score": 3.554,
+          "text": "The difficulty sets the range of possible numbers and the round limit.\nEasy uses the numbers 1 to 20 and allows 6 rounds. Normal uses the numbers\n1 to 100 and allows 8 rounds. Hard uses the numbers 1 to 50 and allows only\n5 rounds. Both secret numbers and every guess must be inside the range."
+        },
+        {
+          "source_id": "rules-paired-rounds",
+          "path": "knowledge/rules.md",
+          "title": "Paired rounds",
+          "score": 3.042,
+          "text": "Every round has two moves, and both players always get their move. First\nyou guess Vector's secret number, then Vector guesses your secret number.\nVector still makes its move in a round where you already guessed right.\nOne round uses one attempt from the round limit."
+        },
+        {
+          "source_id": "rules-valid-guesses",
+          "path": "knowledge/rules.md",
+          "title": "Valid guesses",
+          "score": 2.855,
+          "text": "A guess must be a whole number inside the range of the difficulty. An\nempty guess, text, a fraction such as 4.5, or a number outside the range\nis rejected with a message. A rejected guess does not use up a round."
+        }
+      ],
+      "same_sources_for_both_profiles": true,
+      "same_current_turn_for_both_profiles": true,
+      "runs": {
+        "baseline": {
+          "question": "Can I submit a fractional guess, and does it use a round?",
+          "mode": "rag",
+          "profile": "baseline",
+          "status": "answered",
+          "answer": "Yes, you can submit a fractional guess, and it does not use a round. A fractional guess is allowed, and it is rejected if it is outside the range of the difficulty. [rules-difficulty-limits]",
+          "sources": [
+            {
+              "source_id": "rules-difficulty-limits",
+              "path": "knowledge/rules.md",
+              "title": "Difficulty ranges and round limits",
+              "score": 3.554,
+              "text": "The difficulty sets the range of possible numbers and the round limit.\nEasy uses the numbers 1 to 20 and allows 6 rounds. Normal uses the numbers\n1 to 100 and allows 8 rounds. Hard uses the numbers 1 to 50 and allows only\n5 rounds. Both secret numbers and every guess must be inside the range."
+            },
+            {
+              "source_id": "rules-paired-rounds",
+              "path": "knowledge/rules.md",
+              "title": "Paired rounds",
+              "score": 3.042,
+              "text": "Every round has two moves, and both players always get their move. First\nyou guess Vector's secret number, then Vector guesses your secret number.\nVector still makes its move in a round where you already guessed right.\nOne round uses one attempt from the round limit."
+            },
+            {
+              "source_id": "rules-valid-guesses",
+              "path": "knowledge/rules.md",
+              "title": "Valid guesses",
+              "score": 2.855,
+              "text": "A guess must be a whole number inside the range of the difficulty. An\nempty guess, text, a fraction such as 4.5, or a number outside the range\nis rejected with a message. A rejected guess does not use up a round."
+            }
+          ],
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are the Strategy Coach for the game Number Duel. Answer the player's question in English in at most three short sentences. If sources are given, use only those sources and cite each source you use by writing its ID in square brackets, exactly as it is written in the source list. If you are not sure, say so."
+            },
+            {
+              "role": "user",
+              "content": "Sources:\n\n[rules-difficulty-limits] Difficulty ranges and round limits\nThe difficulty sets the range of possible numbers and the round limit.\nEasy uses the numbers 1 to 20 and allows 6 rounds. Normal uses the numbers\n1 to 100 and allows 8 rounds. Hard uses the numbers 1 to 50 and allows only\n5 rounds. Both secret numbers and every guess must be inside the range.\n\n[rules-paired-rounds] Paired rounds\nEvery round has two moves, and both players always get their move. First\nyou guess Vector's secret number, then Vector guesses your secret number.\nVector still makes its move in a round where you already guessed right.\nOne round uses one attempt from the round limit.\n\n[rules-valid-guesses] Valid guesses\nA guess must be a whole number inside the range of the difficulty. An\nempty guess, text, a fraction such as 4.5, or a number outside the range\nis rejected with a message. A rejected guess does not use up a round.\n\nQuestion: Can I submit a fractional guess, and does it use a round?"
+            }
+          ],
+          "citations": [
+            "rules-difficulty-limits"
+          ],
+          "checks": [
+            {
+              "check": "answer is not empty",
+              "passed": true
+            },
+            {
+              "check": "no thinking block in the answer",
+              "passed": true
+            },
+            {
+              "check": "answer cites at least one source",
+              "passed": true
+            },
+            {
+              "check": "every cited ID is one of the found sources",
+              "passed": true,
+              "unknown_ids": []
+            }
+          ],
+          "generator_called": true,
+          "generation": {
+            "model": "Qwen/Qwen3-0.6B",
+            "revision": "c1899de289a04d12100db370d81485cdf75e47ca",
+            "device": "cpu",
+            "dtype": "float32",
+            "local_files_only": true,
+            "inference_mode": true,
+            "enable_thinking": false,
+            "do_sample": false,
+            "max_new_tokens": 128,
+            "prompt_tokens": 319,
+            "generated_tokens": 46,
+            "thinking_off": true,
+            "seconds": {
+              "load": 0.0,
+              "generate": 3.68
+            }
+          },
+          "environment": {
+            "python": "3.13.15",
+            "platform": "macOS-26.6.1-arm64-arm-64bit-Mach-O",
+            "machine": "arm64",
+            "torch": "2.15.0",
+            "transformers": "5.23.0",
+            "huggingface_hub": "2.4.0",
+            "tokenizers": "0.23.3",
+            "safetensors": "0.8.0",
+            "device": "cpu",
+            "torch_threads": 4,
+            "HF_HUB_OFFLINE": "1"
+          },
+          "note": "The citation check only checks the source IDs, not whether each sentence of the answer is true.",
+          "metrics": {
+            "words_without_citations": 32,
+            "sentences_heuristic": 2,
+            "within_three_sentences": true,
+            "has_citation": true,
+            "all_citations_valid": true,
+            "unknown_citations": [],
+            "validation_failed": false,
+            "generated_tokens": 46
+          }
+        },
+        "specialized": {
+          "question": "Can I submit a fractional guess, and does it use a round?",
+          "mode": "rag",
+          "profile": "specialized",
+          "status": "answered",
+          "answer": "Yes, a fractional guess is allowed, and it does not use a round [rules-paired-rounds]. A guess must be a whole number inside the range of the difficulty [rules-difficulty-limits].",
+          "sources": [
+            {
+              "source_id": "rules-difficulty-limits",
+              "path": "knowledge/rules.md",
+              "title": "Difficulty ranges and round limits",
+              "score": 3.554,
+              "text": "The difficulty sets the range of possible numbers and the round limit.\nEasy uses the numbers 1 to 20 and allows 6 rounds. Normal uses the numbers\n1 to 100 and allows 8 rounds. Hard uses the numbers 1 to 50 and allows only\n5 rounds. Both secret numbers and every guess must be inside the range."
+            },
+            {
+              "source_id": "rules-paired-rounds",
+              "path": "knowledge/rules.md",
+              "title": "Paired rounds",
+              "score": 3.042,
+              "text": "Every round has two moves, and both players always get their move. First\nyou guess Vector's secret number, then Vector guesses your secret number.\nVector still makes its move in a round where you already guessed right.\nOne round uses one attempt from the round limit."
+            },
+            {
+              "source_id": "rules-valid-guesses",
+              "path": "knowledge/rules.md",
+              "title": "Valid guesses",
+              "score": 2.855,
+              "text": "A guess must be a whole number inside the range of the difficulty. An\nempty guess, text, a fraction such as 4.5, or a number outside the range\nis rejected with a message. A rejected guess does not use up a round."
+            }
+          ],
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are the Strategy Coach for the game Number Duel. Answer the player's question in English in at most three short sentences. If sources are given, use only those sources and cite each source you use by writing its ID in square brackets, exactly as it is written in the source list. If you are not sure, say so."
+            },
+            {
+              "role": "user",
+              "content": "Sources:\n\n[rules-starting-a-duel] Starting a duel\nBefore the duel you choose a difficulty and enter your secret number.\nVector's secret number is drawn at random only when you press Start Duel.\nDuring the duel the difficulty and both secret numbers do not change.\nVector's secret number is shown only after the duel ends.\n\nQuestion: What do I need to do before a duel starts?"
+            },
+            {
+              "role": "assistant",
+              "content": "Choose a difficulty, enter your secret number and press Start Duel. Vector's secret number is drawn at random only at that moment [rules-starting-a-duel]."
+            },
+            {
+              "role": "user",
+              "content": "Sources:\n\n[rules-new-duel] Starting over with New Duel\nThe New Duel button is available during a duel and after it ends. It\nclears the current duel and its history and goes back to the setup. The\nchosen difficulty is kept. New Duel does not change the Solo game.\n\nQuestion: Can I use New Duel in the middle of a duel?"
+            },
+            {
+              "role": "assistant",
+              "content": "Yes, New Duel works during a duel and after it ends. It clears the current duel and its history but keeps the chosen difficulty [rules-new-duel]."
+            },
+            {
+              "role": "user",
+              "content": "Sources:\n\n[reliability-logs] Logs without secrets\nThe safe service writes a log line for every round. An accepted round is\nlogged as duel_round_accepted with the round number and the new status. A\nrejected round is logged as duel_round_rejected with the round number and\nthe stage, engine or guardrail. The logs never contain secret numbers or\nfull game states.\n\nQuestion: Do the game logs show my secret number?"
+            },
+            {
+              "role": "assistant",
+              "content": "No, the logs never contain secret numbers or full game states. A rejected round is logged only with its round number and its stage, engine or guardrail [reliability-logs]."
+            },
+            {
+              "role": "user",
+              "content": "Sources:\n\n[rules-difficulty-limits] Difficulty ranges and round limits\nThe difficulty sets the range of possible numbers and the round limit.\nEasy uses the numbers 1 to 20 and allows 6 rounds. Normal uses the numbers\n1 to 100 and allows 8 rounds. Hard uses the numbers 1 to 50 and allows only\n5 rounds. Both secret numbers and every guess must be inside the range.\n\n[rules-paired-rounds] Paired rounds\nEvery round has two moves, and both players always get their move. First\nyou guess Vector's secret number, then Vector guesses your secret number.\nVector still makes its move in a round where you already guessed right.\nOne round uses one attempt from the round limit.\n\n[rules-valid-guesses] Valid guesses\nA guess must be a whole number inside the range of the difficulty. An\nempty guess, text, a fraction such as 4.5, or a number outside the range\nis rejected with a message. A rejected guess does not use up a round.\n\nQuestion: Can I submit a fractional guess, and does it use a round?"
+            }
+          ],
+          "citations": [
+            "rules-paired-rounds",
+            "rules-difficulty-limits"
+          ],
+          "checks": [
+            {
+              "check": "answer is not empty",
+              "passed": true
+            },
+            {
+              "check": "no thinking block in the answer",
+              "passed": true
+            },
+            {
+              "check": "answer cites at least one source",
+              "passed": true
+            },
+            {
+              "check": "every cited ID is one of the found sources",
+              "passed": true,
+              "unknown_ids": []
+            }
+          ],
+          "generator_called": true,
+          "generation": {
+            "model": "Qwen/Qwen3-0.6B",
+            "revision": "c1899de289a04d12100db370d81485cdf75e47ca",
+            "device": "cpu",
+            "dtype": "float32",
+            "local_files_only": true,
+            "inference_mode": true,
+            "enable_thinking": false,
+            "do_sample": false,
+            "max_new_tokens": 128,
+            "prompt_tokens": 698,
+            "generated_tokens": 44,
+            "thinking_off": true,
+            "seconds": {
+              "load": 0.0,
+              "generate": 4.31
+            }
+          },
+          "environment": {
+            "python": "3.13.15",
+            "platform": "macOS-26.6.1-arm64-arm-64bit-Mach-O",
+            "machine": "arm64",
+            "torch": "2.15.0",
+            "transformers": "5.23.0",
+            "huggingface_hub": "2.4.0",
+            "tokenizers": "0.23.3",
+            "safetensors": "0.8.0",
+            "device": "cpu",
+            "torch_threads": 4,
+            "HF_HUB_OFFLINE": "1"
+          },
+          "note": "The citation check only checks the source IDs, not whether each sentence of the answer is true.",
+          "metrics": {
+            "words_without_citations": 26,
+            "sentences_heuristic": 2,
+            "within_three_sentences": true,
+            "has_citation": true,
+            "all_citations_valid": true,
+            "unknown_citations": [],
+            "validation_failed": false,
+            "generated_tokens": 44
+          }
+        }
+      }
+    }
+  ],
+  "summary": {
+    "baseline": {
+      "answers": 6,
+      "mean_words_without_citations": 35.8,
+      "mean_sentences_heuristic": 2.0,
+      "within_three_sentences": 6,
+      "with_citation": 5,
+      "all_citations_valid": 5,
+      "with_unknown_citation": 0,
+      "validation_failed": 1,
+      "mean_generated_tokens": 54.0
+    },
+    "specialized": {
+      "answers": 6,
+      "mean_words_without_citations": 39.3,
+      "mean_sentences_heuristic": 2.7,
+      "within_three_sentences": 4,
+      "with_citation": 6,
+      "all_citations_valid": 6,
+      "with_unknown_citation": 0,
+      "validation_failed": 0,
+      "mean_generated_tokens": 60.3
+    }
+  }
+}

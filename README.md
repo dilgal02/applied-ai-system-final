@@ -169,6 +169,8 @@ When a round is rejected:
 | `coach_model.py` | Local model: download the pinned Qwen3-0.6B, `LocalGenerator` for CPU generation, `smoke` check |
 | `coach_retrieval.py` | BM25 search over `knowledge/*.md` |
 | `coach.py` | Strategy Coach CLI prototype: search → local model → answer with source IDs |
+| `coach_prompts.py` | Prompt profiles: `baseline` and `specialized` (three few-shot examples) |
+| `evaluate_coach.py` | Compares both prompt profiles on six fixed questions |
 | `knowledge/*.md` | The game's own knowledge files, 22 sections with stable IDs |
 
 Mermaid source: [diagrams/architecture.mmd](diagrams/architecture.mmd)
@@ -265,21 +267,29 @@ flowchart TD
     bm25 --> found
 
     subgraph coach_tool["RAG Coach CLI prototype (coach.py), not in the app"]
-        coach_cli["coach.py --question<br/>ask_coach()"]
+        coach_cli["coach.py --question<br/>ask_coach(), --profile"]
+        prompts["coach_prompts.py<br/>baseline (default) or<br/>specialized = + 3 few-shot examples"]
         abstain["abstained: no section found<br/>program rule, model not called"]
-        citation_check["citation check: at least one<br/>[source_id], all IDs from the<br/>found sections (IDs only)"]
+        citation_check["citation check: at least one<br/>[source_id], all IDs from the<br/>sources of this question (IDs only)"]
         coach_out["answer, sources, status<br/>+ optional JSON report"]
+        eval_coach["evaluate_coach.py<br/>6 fixed questions x 2 profiles"]
+        spec_report[("artifacts/coach_specialization.json")]
     end
 
     coach_cli -->|"1. search, top 3"| bm25
     bm25 -->|"sections: source_id,<br/>text, score"| coach_cli
     coach_cli -->|"no section found"| abstain
-    coach_cli -->|"2. question + found sections<br/>(--no-retrieval: question only)"| generator
+    coach_cli -->|"build messages<br/>for the profile"| prompts
+    prompts -->|"example sections by ID"| bm25
+    coach_cli -->|"2. messages: question + found sections<br/>(--no-retrieval: question only)"| generator
     generator -->|"raw answer"| coach_cli
     coach_cli -->|"with retrieval"| citation_check
     citation_check -->|"answered or<br/>validation_failed"| coach_out
     coach_cli -->|"--no-retrieval:<br/>answer without retrieval"| coach_out
     abstain --> coach_out
+    eval_coach -->|"one search per question"| bm25
+    eval_coach -->|"ask_coach for each profile,<br/>same sources, one generator"| coach_cli
+    eval_coach --> spec_report
 
     tests["tests/ (pytest)"]
     tests -.->|"unit tests"| core
@@ -437,7 +447,8 @@ The Strategy Coach answers questions about the game on the command line.
 It is a working prototype: question → knowledge search → local model →
 answer with source IDs. It does not change the game, the game does not
 need it, and it is not connected to the Streamlit app yet. There is no
-match analysis and no few-shot specialization yet.
+match analysis yet. The prompt has two profiles: `baseline` (default) and
+`specialized`, which adds few-shot examples.
 
 **Coach (`coach.py`)**
 
@@ -453,7 +464,7 @@ match analysis and no few-shot specialization yet.
 - **No match**: if the search finds nothing, the status is `abstained` and
   the model is not called. This refusal is a rule of the program, not an
   answer from the model.
-- **`--no-retrieval`** (baseline): skips the search and the knowledge
+- **`--no-retrieval`** (model only): skips the search and the knowledge
   files, but calls the same model with the same instructions and settings.
   Only the found sources are missing, so a missing citation is not an
   error; the status is `answered_without_retrieval`.
@@ -463,6 +474,20 @@ match analysis and no few-shot specialization yet.
   contradicting "Yes". Without retrieval, the answer was vague and cited an
   invented "[Source: Game Rules]". The bread question was refused
   (`abstained`). These three runs are smoke checks, not an evaluation.
+- **Prompt profiles**: `--profile baseline` (default) or
+  `--profile specialized`, which puts three short few-shot examples
+  (`coach_prompts.py`) before the question. This is prompt specialization
+  only; no weights are trained, and everything else stays the same. The
+  specialized profile only works with retrieval, and citations are only
+  allowed from the sources found for the current question.
+- **Profile comparison**: `evaluate_coach.py` ran both profiles on six
+  fixed questions (12 real generations, saved in
+  [artifacts/coach_specialization.json](artifacts/coach_specialization.json)).
+  The specialized profile had no `validation_failed` answer (baseline: 1)
+  and always cited valid sources, but its answers were longer and broke the
+  three-sentence limit twice. Both profiles answered the fractional-guess
+  question wrongly. This does not show a general improvement; details are
+  in the [model card](model_card.md#few-shot-prompt-specialization).
 
 **Local model (`coach_model.py`)**
 
@@ -513,8 +538,14 @@ python coach_retrieval.py --query "What happens if both players guess correctly?
 # Ask the coach (search + local model)
 python coach.py --question "Must the inspector require Vector to guess the exact midpoint?"
 
-# The same question without retrieval (baseline)
+# The same question without retrieval (model only)
 python coach.py --question "Must the inspector require Vector to guess the exact midpoint?" --no-retrieval
+
+# The specialized prompt profile (few-shot examples, with retrieval)
+python coach.py --question "Must the inspector require Vector to guess the exact midpoint?" --profile specialized
+
+# Compare both prompt profiles on six fixed questions (12 generations)
+python evaluate_coach.py --output artifacts/coach_specialization.json
 ```
 
 The coach tools were checked only on macOS 26.6.1 (arm64) with Python
@@ -563,7 +594,7 @@ Linux are not verified yet.
 
 Last confirmed results, on Python 3.13.15 with Streamlit 1.60.0:
 
-- **153 automated tests passed** (`python -m pytest -q`);
+- **164 automated tests passed** (`python -m pytest -q`);
 - **6 of 6 evaluation scenarios passed** (`python evaluate.py`).
 
 These are two different measures, and neither is a guarantee that the app
@@ -584,9 +615,12 @@ What the tests cover:
   the pinned model revision, the knowledge search (expected sources,
   empty and unrelated queries, `top_k`, stable order, duplicate IDs), and
   the coach (found texts and IDs reach the model, unknown or missing
-  citations are blocked, no match does not call the model, the baseline
-  skips the search). These tests replace the model with a fake and never
-  load the real one.
+  citations are blocked, no match does not call the model, the
+  `--no-retrieval` mode skips the search), and the prompt profiles
+  (baseline is the default, specialized only adds the examples, both get
+  the same current sources, a citation copied from an example is
+  rejected). These tests replace the model with a fake and never load the
+  real one.
 
 Limits of this testing:
 
@@ -597,8 +631,10 @@ Limits of this testing:
   automated visual tests;
 - only Python 3.13.15 and Streamlit 1.60.0 were tested. Streamlit 1.36 is
   the declared minimum, but it was not tested;
-- the real local model is checked only by `coach_model.py smoke` and
-  `coach.py` runs, which are not part of pytest;
+- the real local model is checked only by `coach_model.py smoke`,
+  `coach.py` and `evaluate_coach.py` runs, which are not part of pytest.
+  The profile comparison has only six questions and one generation per
+  profile;
 - there are no load or multi-user tests.
 
 ## Known limitations
@@ -646,6 +682,8 @@ evaluate.py            reproducible evaluation script
 coach.py               Strategy Coach CLI prototype (search + local model)
 coach_model.py         local model: download, LocalGenerator, smoke check
 coach_retrieval.py     BM25 search over the knowledge files
+coach_prompts.py       prompt profiles and few-shot examples
+evaluate_coach.py      comparison of the two prompt profiles
 knowledge/             the game's knowledge files (22 sections)
 requirements-coach.txt optional dependencies for the coach tools
 models/                downloaded model weights (git-ignored)

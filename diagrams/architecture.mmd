@@ -89,21 +89,29 @@ flowchart TD
     bm25 --> found
 
     subgraph coach_tool["RAG Coach CLI prototype (coach.py), not in the app"]
-        coach_cli["coach.py --question<br/>ask_coach()"]
+        coach_cli["coach.py --question<br/>ask_coach(), --profile"]
+        prompts["coach_prompts.py<br/>baseline (default) or<br/>specialized = + 3 few-shot examples"]
         abstain["abstained: no section found<br/>program rule, model not called"]
-        citation_check["citation check: at least one<br/>[source_id], all IDs from the<br/>found sections (IDs only)"]
+        citation_check["citation check: at least one<br/>[source_id], all IDs from the<br/>sources of this question (IDs only)"]
         coach_out["answer, sources, status<br/>+ optional JSON report"]
+        eval_coach["evaluate_coach.py<br/>6 fixed questions x 2 profiles"]
+        spec_report[("artifacts/coach_specialization.json")]
     end
 
     coach_cli -->|"1. search, top 3"| bm25
     bm25 -->|"sections: source_id,<br/>text, score"| coach_cli
     coach_cli -->|"no section found"| abstain
-    coach_cli -->|"2. question + found sections<br/>(--no-retrieval: question only)"| generator
+    coach_cli -->|"build messages<br/>for the profile"| prompts
+    prompts -->|"example sections by ID"| bm25
+    coach_cli -->|"2. messages: question + found sections<br/>(--no-retrieval: question only)"| generator
     generator -->|"raw answer"| coach_cli
     coach_cli -->|"with retrieval"| citation_check
     citation_check -->|"answered or<br/>validation_failed"| coach_out
     coach_cli -->|"--no-retrieval:<br/>answer without retrieval"| coach_out
     abstain --> coach_out
+    eval_coach -->|"one search per question"| bm25
+    eval_coach -->|"ask_coach for each profile,<br/>same sources, one generator"| coach_cli
+    eval_coach --> spec_report
 
     tests["tests/ (pytest)"]
     tests -.->|"unit tests"| core
