@@ -45,10 +45,16 @@ def test_duel_is_a_separate_page():
 
     assert not at.exception
     assert titles(at) == ["Number Duel"]
-    # Nothing from the solo game form is on this page.
+    # The duel has its own settings and setup form.
+    assert at.selectbox(key="duel_difficulty_select").value == "Normal"
+    secret_input = at.number_input(key="duel_secret_input_Normal")
+    assert secret_input.label == "Your secret number"
+    assert any(b.label == "Start Duel" for b in at.button)
+    # Nothing from the solo game is on this page.
+    assert len(at.sidebar.selectbox) == 0
     assert len(at.text_input) == 0
     assert not any(b.label.startswith("Submit Guess") for b in at.button)
-    assert len(at.sidebar.selectbox) == 0
+    assert not any(b.label.startswith("New Game") for b in at.button)
 
 
 def test_solo_game_survives_a_visit_to_duel():
