@@ -1,8 +1,14 @@
 """Compare the baseline and the specialized (few-shot) coach prompts.
 
     python evaluate_coach.py --output artifacts/coach_specialization.json
+    python evaluate_coach.py --suite fraction-regression \\
+        --output artifacts/coach_fraction_regression.json
 
-For each of the six fixed questions below, the knowledge search runs once.
+Suites: "specialization" (default, six questions) and "fraction-regression"
+(three questions about fractional input). After the error analysis both are
+development / regression sets, not independent evaluations.
+
+For each fixed question of a suite, the knowledge search runs once.
 Both profiles get the same sources in the same order and use one shared,
 loaded generator, with one generation each: 12 real generations. No answer
 is picked from several tries, and greedy decoding is used.
@@ -38,6 +44,30 @@ QUESTIONS = (
     "Does the Solo game pass through the duel inspector?",
     "Can I submit a fractional guess, and does it use a round?",
 )
+
+# Added after the error analysis of the question above.
+FRACTION_REGRESSION_QUESTIONS = (
+    "Can I submit a fractional guess, and does it use a round?",
+    "Are decimal guesses allowed, and will they consume a round?",
+    "What happens if I enter 4.5 as my guess?",
+)
+
+DEFAULT_SUITE = "specialization"
+SUITES = {
+    "specialization": QUESTIONS,
+    "fraction-regression": FRACTION_REGRESSION_QUESTIONS,
+}
+SUITE_NOTES = {
+    "specialization": (
+        "These questions were fixed before the first run (commit c8bec24). "
+        "After the error analysis that followed, they are a development / "
+        "regression set, not an independent evaluation."
+    ),
+    "fraction-regression": (
+        "Development / regression set, written after the error analysis of "
+        "the fractional-guess answer. It is not an independent evaluation."
+    ),
+}
 
 WORD = re.compile(r"[A-Za-z0-9]+(?:['’-][A-Za-z0-9]+)*")
 SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
@@ -125,7 +155,7 @@ def summarize(rows: list, profile: str) -> dict:
 
 
 def run_comparison(questions=QUESTIONS, *, generator=None,
-                   search=None) -> dict:
+                   search=None, suite=DEFAULT_SUITE) -> dict:
     """Run both profiles on every question and collect the results."""
     search = search or coach_retrieval.search
     counting = CountingGenerator(generator or coach_model.get_generator())
@@ -163,13 +193,15 @@ def run_comparison(questions=QUESTIONS, *, generator=None,
     first = next((row["runs"][BASELINE] for row in rows
                   if row["runs"][BASELINE]["generator_called"]), None)
     return {
+        "suite": suite,
         "description": (
-            "Baseline vs specialized (few-shot) coach prompts on six fixed "
-            "questions: one search per question, the same sources for both "
-            "profiles, one shared generator, one greedy generation per "
-            "profile."
+            f"Baseline vs specialized (few-shot) coach prompts on "
+            f"{len(questions)} fixed questions: one search per question, "
+            f"the same sources for both profiles, one shared generator, one "
+            f"greedy generation per profile."
         ),
         "notes": [
+            SUITE_NOTES.get(suite, "Custom question list."),
             "Prompt specialization only: no model weights were trained.",
             "Both profiles use the same model, system instructions, "
             "retrieval, generation settings and token limit. The only "
@@ -238,11 +270,17 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
         description="Compare baseline and specialized coach prompts."
     )
+    parser.add_argument(
+        "--suite",
+        choices=list(SUITES),
+        default=DEFAULT_SUITE,
+        help="question set (default: specialization)",
+    )
     parser.add_argument("--output", help="save the JSON report here")
     args = parser.parse_args(argv)
 
     try:
-        report = run_comparison()
+        report = run_comparison(SUITES[args.suite], suite=args.suite)
     except coach_model.CoachSetupError as error:
         print(error, file=sys.stderr)
         return 2

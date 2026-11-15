@@ -120,6 +120,28 @@ def test_comparison_searches_once_and_shares_the_sources():
     assert report["summary"][BASELINE]["validation_failed"] == 2
 
 
+def test_suites_keep_the_default_and_add_the_fraction_set(monkeypatch):
+    assert evaluate_coach.DEFAULT_SUITE == "specialization"
+    assert evaluate_coach.SUITES["specialization"] == (
+        "What happens if both players guess correctly in the same round?",
+        "What number range and round limit does Hard difficulty use?",
+        "Does choose_guess receive the player secret number?",
+        "Must the inspector require Vector to guess the exact midpoint?",
+        "Does the Solo game pass through the duel inspector?",
+        "Can I submit a fractional guess, and does it use a round?",
+    )
+    fake = FakeGenerator("An answer [rules-valid-guesses].")
+    monkeypatch.setattr(evaluate_coach.coach_model, "get_generator",
+                        lambda: fake)
+
+    assert evaluate_coach.main(["--suite", "fraction-regression"]) == 0
+
+    assert len(fake.calls) == 6
+    asked = {call["messages"][-1]["content"].rsplit("Question: ", 1)[1]
+             for call in fake.calls}
+    assert asked == set(evaluate_coach.FRACTION_REGRESSION_QUESTIONS)
+
+
 @pytest.mark.parametrize(
     "answer, words, sentences",
     [

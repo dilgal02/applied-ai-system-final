@@ -37,6 +37,14 @@ these they this those to too us was we were what when where which while
 who why will with would you your
 """.split())
 
+# Words with the same meaning for the game, mapped to one term after
+# stemming. They apply the same way to queries and to the knowledge files.
+# "decimals" is stemmed to "decimal" first, so it is covered too.
+TERM_ALIASES = {
+    "fractional": "fraction",
+    "decimal": "fraction",
+}
+
 # BM25 settings (common default values).
 K1 = 1.5
 B = 0.75
@@ -72,9 +80,14 @@ def normalize_word(word: str) -> str:
 
 
 def tokenize(text: str) -> list:
-    """Lower-case words without stop words, each in a normalized form."""
+    """Lower-case words without stop words, each in a normalized form.
+
+    Each word is stemmed first, then mapped through TERM_ALIASES.
+    """
     words = WORD.findall(text.lower())
-    return [normalize_word(word) for word in words if word not in STOP_WORDS]
+    terms = (normalize_word(word) for word in words
+             if word not in STOP_WORDS)
+    return [TERM_ALIASES.get(term, term) for term in terms]
 
 
 def relative_path(path: Path) -> str:

@@ -257,7 +257,7 @@ flowchart TD
 
     subgraph retrieval_tool["Knowledge search (coach_retrieval.py)"]
         knowledge[("knowledge/*.md<br/>rules, strategy, reliability<br/>22 sections with source_id")]
-        bm25["BM25 index<br/>(Python standard library)"]
+        bm25["BM25 index<br/>(Python standard library)<br/>term aliases: fractional,<br/>decimal → fraction"]
         query_cmd["coach_retrieval.py<br/>--query --top-k"]
         found["found sections:<br/>source_id, path, score, text<br/>score = word match,<br/>not model confidence"]
     end
@@ -272,8 +272,8 @@ flowchart TD
         abstain["abstained: no section found<br/>program rule, model not called"]
         citation_check["citation check: at least one<br/>[source_id], all IDs from the<br/>sources of this question (IDs only)"]
         coach_out["answer, sources, status<br/>+ optional JSON report"]
-        eval_coach["evaluate_coach.py<br/>6 fixed questions x 2 profiles"]
-        spec_report[("artifacts/coach_specialization.json")]
+        eval_coach["evaluate_coach.py --suite<br/>fixed questions x 2 profiles"]
+        spec_report[("artifacts/coach_specialization.json<br/>coach_fraction_regression.json")]
     end
 
     coach_cli -->|"1. search, top 3"| bm25
@@ -487,7 +487,21 @@ match analysis yet. The prompt has two profiles: `baseline` (default) and
   and always cited valid sources, but its answers were longer and broke the
   three-sentence limit twice. Both profiles answered the fractional-guess
   question wrongly. This does not show a general improvement; details are
-  in the [model card](model_card.md#few-shot-prompt-specialization).
+  in the [model card](model_card.md#few-shot-prompt-specialization). This
+  comparison belongs to the code at commit `c8bec24` and is kept
+  unchanged; after the error analysis, its questions are a development /
+  regression set, not an independent evaluation.
+- **Fractional-input fix**: the search did not connect "fractional" and
+  "decimal" with "fraction", so the rule `rules-valid-guesses` ranked 3rd
+  and 7th. Two term aliases after stemming (`fractional`, `decimal` →
+  `fraction`) now rank it 1st and 2nd. A regression run of three
+  fractional-input questions (6 real generations,
+  [artifacts/coach_fraction_regression.json](artifacts/coach_fraction_regression.json))
+  shows that the model still makes the error: four of six answers say such
+  guesses are allowed, although the cited source says they are rejected.
+  The fix improved the search, not the answers, and nothing here is credited
+  to the few-shot profile; see the
+  [model card](model_card.md#fractional-input-retrieval-fix).
 
 **Local model (`coach_model.py`)**
 
@@ -546,6 +560,9 @@ python coach.py --question "Must the inspector require Vector to guess the exact
 
 # Compare both prompt profiles on six fixed questions (12 generations)
 python evaluate_coach.py --output artifacts/coach_specialization.json
+
+# Regression set for fractional input (3 questions, 6 generations)
+python evaluate_coach.py --suite fraction-regression --output artifacts/coach_fraction_regression.json
 ```
 
 The coach tools were checked only on macOS 26.6.1 (arm64) with Python
@@ -594,7 +611,7 @@ Linux are not verified yet.
 
 Last confirmed results, on Python 3.13.15 with Streamlit 1.60.0:
 
-- **164 automated tests passed** (`python -m pytest -q`);
+- **171 automated tests passed** (`python -m pytest -q`);
 - **6 of 6 evaluation scenarios passed** (`python evaluate.py`).
 
 These are two different measures, and neither is a guarantee that the app
@@ -613,7 +630,8 @@ What the tests cover:
   check that two runs give the same JSON;
 - the coach tools: messages for missing dependencies or a missing model,
   the pinned model revision, the knowledge search (expected sources,
-  empty and unrelated queries, `top_k`, stable order, duplicate IDs), and
+  empty and unrelated queries, `top_k`, stable order, duplicate IDs, the
+  fractional-input term aliases), and
   the coach (found texts and IDs reach the model, unknown or missing
   citations are blocked, no match does not call the model, the
   `--no-retrieval` mode skips the search), and the prompt profiles

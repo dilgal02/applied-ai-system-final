@@ -46,6 +46,43 @@ def test_rejected_round_behavior_is_found():
             in flat(results[0].section.text))
 
 
+@pytest.mark.parametrize(
+    "query",
+    [
+        "Can I submit a fractional guess, and does it use a round?",
+        "Can I submit decimal guesses?",
+        "Can I enter a fraction as my guess?",
+        "What happens if I enter 4.5 as my guess?",
+    ],
+    ids=["fractional-guess", "decimal-guesses", "fraction", "input-4-5"],
+)
+def test_fractional_input_questions_find_valid_guesses_first(query):
+    results = search(query, 3)
+
+    assert ids(results)[0] == "rules-valid-guesses"
+    assert "a fraction such as 4.5" in flat(results[0].section.text)
+
+
+def test_fraction_aliases_apply_after_stemming():
+    for word in ("fraction", "fractions", "fractional", "decimal",
+                 "decimals", "Decimals"):
+        assert coach_retrieval.tokenize(word) == ["fraction"]
+    # The knowledge files go through the same normalization.
+    assert "fraction" in coach_retrieval.tokenize("a fraction such as 4.5")
+    # No general rule that cuts "-al": "normal" stays a different word.
+    assert coach_retrieval.tokenize("Normal") == ["normal"]
+
+
+def test_decimal_regression_question_gets_the_rule_into_the_context():
+    # "allowed" also matches "allows" in rules-difficulty-limits, so this
+    # wording ranks the rule second. It is still among the found sources.
+    results = search(
+        "Are decimal guesses allowed, and will they consume a round?", 3
+    )
+
+    assert "rules-valid-guesses" in ids(results)
+
+
 def test_hard_limit_question_finds_the_hard_sections():
     results = search("Can Vector run out of rounds on Hard?", 3)
 

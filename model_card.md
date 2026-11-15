@@ -12,7 +12,7 @@
 | Not used | No training or fine-tuning, no external AI inference API, no Coach in the interface |
 | Advanced feature | A built-in reliability system that checks every duel step before it is saved |
 | Tested environment | Python 3.13.15, Streamlit 1.60.0; coach tools on macOS arm64 with torch 2.15.0 and transformers 5.23.0, CPU only |
-| Last confirmed results | 164 automated tests passed; 6 of 6 evaluation scenarios passed |
+| Last confirmed results | 171 automated tests passed; 6 of 6 evaluation scenarios passed |
 
 ## Purpose and intended use
 
@@ -99,7 +99,7 @@ Limits:
 - the scenarios test the game core, not the browser page;
 - the tests and the evaluation were written with help from the same AI
   agent that helped write the code, so they may share blind spots with it;
-- the 164 passing tests and the 6 passing scenarios are separate measures.
+- the 171 passing tests and the 6 passing scenarios are separate measures.
   Neither proves that the app has no bugs.
 
 ## Local language model (separate CLI)
@@ -248,6 +248,94 @@ wrongly said that a fractional guess is allowed, although the knowledge
 files say it is rejected; the search ranked the right section,
 `rules-valid-guesses`, only third. With one generation per profile on six
 questions, these differences are too small to show a general improvement.
+
+**Status of this comparison.** The table above was measured with the code
+at commit `c8bec24`, before the retrieval fix described below. The table
+and [artifacts/coach_specialization.json](artifacts/coach_specialization.json)
+are kept unchanged. After the error analysis, these six questions are a
+development / regression set, not an independent evaluation.
+
+## Fractional-input retrieval fix
+
+**Cause.** The rule is in `rules-valid-guesses`: "a fraction such as 4.5
+... is rejected" and "A rejected guess does not use up a round". The
+search's simple stemming kept "fractional" and "decimal" as words that
+differ from "fraction", so these questions did not match the rule's key
+word, and other sections ranked higher.
+
+**Change.** `coach_retrieval.py` now maps two terms after stemming, in the
+same way for questions and for the knowledge files: `fractional` →
+`fraction` and `decimal` → `fraction` ("decimals" is stemmed to "decimal"
+first). There are no rules for whole questions, no forced ranking of a
+source and no general cutting of "-al". Prompts, few-shot examples, the
+model and the generation settings did not change.
+
+| Question | Rank of `rules-valid-guesses` before | After |
+|----------|--------------------------------------|-------|
+| Can I submit a fractional guess, and does it use a round? | 3 | 1 |
+| Are decimal guesses allowed, and will they consume a round? | 7 | 2 |
+| What happens if I enter 4.5 as my guess? | 1 | 1 |
+
+The decimal question still ranks `rules-difficulty-limits` first, because
+"allowed" also matches "allows" there; the rule is still among the three
+sources the model gets.
+
+**Real answers.** `evaluate_coach.py --suite fraction-regression` ran these
+three questions with both profiles: one search per question, the same
+sources for both profiles, one shared generator, the same settings, 6 real
+generations with `HF_HUB_OFFLINE=1`. Everything is saved in
+[artifacts/coach_fraction_regression.json](artifacts/coach_fraction_regression.json).
+This is a development / regression set written after the error analysis,
+not an independent evaluation.
+
+> **Fractional, baseline** (`validation_failed`): Yes, you can submit a
+> fractional guess, and it does not use a round. A fractional guess is
+> allowed as long as it is a whole number within the difficulty range. A
+> rejected guess does not use up a round.
+
+> **Fractional, specialized** (`answered`): Yes, a fractional guess is
+> allowed, and it does not use a round [rules-valid-guesses]. A guess must
+> be a whole number inside the range of the difficulty
+> [rules-difficulty-limits].
+
+> **Decimal, baseline** (`answered`): Decimal guesses are allowed, but
+> they do not consume a round. A guess must be a whole number inside the
+> range of the difficulty. If a guess is invalid (e.g., decimal or outside
+> the range), it is rejected. [rules-valid-guesses]
+
+> **Decimal, specialized** (`answered`): Decimal guesses are allowed, and
+> they will consume a round [rules-valid-guesses].
+
+> **4.5, baseline** (`answered`): If you enter 4.5 as your guess, it is
+> rejected because it is not a whole number within the range of the
+> difficulty. [rules-valid-guesses]
+
+> **4.5, specialized** (`answered`): If you enter 4.5 as your guess, it is
+> rejected because it is outside the range of the difficulty
+> [rules-valid-guesses]. A rejected guess does not use up a round
+> [rules-valid-guesses].
+
+**Manual reading of these six answers.** This is a manual check of these
+specific cases against the knowledge files. It is not an automatic metric
+and not a general test of truthfulness.
+
+| Question | Profile | Says the input is rejected | Says no round is used | No claim that it is allowed | Cited source supports the answer |
+|----------|---------|----------------------------|-----------------------|-----------------------------|----------------------------------|
+| Fractional | baseline | No | Yes | No | No citation (`validation_failed`) |
+| Fractional | specialized | No | Yes | No | No: `rules-valid-guesses` says fractions are rejected |
+| Decimal | baseline | Yes | Yes | No | Partly: it supports the rejection, not "allowed" |
+| Decimal | specialized | No | No (says it consumes a round) | No | No |
+| 4.5 | baseline | Yes | Not mentioned | Yes | Yes |
+| 4.5 | specialized | Yes, with a wrong reason ("outside the range") | Yes | Yes | Partly: it supports the rejection and the round, not the reason |
+
+**Result.** The retrieval fix put the rule into the model's context for all
+three questions, first for two of them. It did not fix the generation
+error: four of the six answers still say that fractional or decimal guesses
+are allowed, although the cited source says they are rejected, and none of
+the six answers meets all four points. The 4.5 question already found the
+rule first before the fix, so its answers do not show an effect of the
+fix. Nothing here can be credited to the few-shot profile: both profiles
+made the error.
 
 ## State, data and privacy
 

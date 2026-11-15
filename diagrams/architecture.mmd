@@ -79,7 +79,7 @@ flowchart TD
 
     subgraph retrieval_tool["Knowledge search (coach_retrieval.py)"]
         knowledge[("knowledge/*.md<br/>rules, strategy, reliability<br/>22 sections with source_id")]
-        bm25["BM25 index<br/>(Python standard library)"]
+        bm25["BM25 index<br/>(Python standard library)<br/>term aliases: fractional,<br/>decimal → fraction"]
         query_cmd["coach_retrieval.py<br/>--query --top-k"]
         found["found sections:<br/>source_id, path, score, text<br/>score = word match,<br/>not model confidence"]
     end
@@ -94,8 +94,8 @@ flowchart TD
         abstain["abstained: no section found<br/>program rule, model not called"]
         citation_check["citation check: at least one<br/>[source_id], all IDs from the<br/>sources of this question (IDs only)"]
         coach_out["answer, sources, status<br/>+ optional JSON report"]
-        eval_coach["evaluate_coach.py<br/>6 fixed questions x 2 profiles"]
-        spec_report[("artifacts/coach_specialization.json")]
+        eval_coach["evaluate_coach.py --suite<br/>fixed questions x 2 profiles"]
+        spec_report[("artifacts/coach_specialization.json<br/>coach_fraction_regression.json")]
     end
 
     coach_cli -->|"1. search, top 3"| bm25
