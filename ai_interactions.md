@@ -1,10 +1,112 @@
 # AI Interactions Log
 
+This log has two parts:
+
+1. **Final Project: Number Duel**: how I worked with the AI agent on the
+   final project.
+2. **Base Project History: Game Glitch Investigator**: the original
+   sections from the base project, kept as they were.
+
+---
+
+## Final Project: Number Duel
+
+**AI tool:** Claude Code, an AI coding agent.
+
+**How I worked with it:** I built the duel in small steps: Vector's
+strategy, its search range, the duel state, fair paired rounds, the
+inspector, the safe service, the two pages, the design and the evaluation.
+For each step I wrote a prompt that named the files the agent could change,
+what had to stay the same, and which checks to run. The agent helped plan
+the steps, wrote the code and tests, ran pytest and the git checks, and
+drafted documentation. I read the diff and the test output before every
+commit and decided whether to commit.
+
+### Decisions I made while working with the AI
+
+- **A local opponent instead of an AI service.** Vector is a deterministic
+  binary-search algorithm, so the game works without API keys and every
+  run can be repeated.
+- **An inspector that does not trust the engine.** I asked for
+  `validate_transition` to work out hints, ranges and the result on its own
+  and not to call `check_guess`, `play_round`, `choose_guess` or
+  `update_bounds`. Otherwise a bug in the engine could hide behind the
+  engine's own functions.
+- **Check before save.** The duel page stores `duel_state` only after
+  `safe_play_round` returned. `GuardrailViolation` is caught before the
+  general `ValueError`, and the player sees only a general message.
+- **`bool` is not a number.** In Python `True == 1`, so I asked for booleans
+  to be rejected wherever a whole number is expected.
+- **Tests that check the right reason.** The agent pointed out that the test
+  fragment `"player_secret"` would also match a type error, so I changed the
+  out-of-range cases to `"outside the range"`.
+- **Privacy.** I had the Developer Debug Info panel removed, because it
+  showed the secret, and Vector's secret is shown only after the duel ends.
+- **Checking the real page, not only the tests.** I asked for the pages to
+  be checked in a browser after the redesign. The screenshots showed that
+  the theme was not applied at all in Streamlit 1.60, although every test
+  passed. The fix was to apply the theme in each page with `st.html`.
+- **Evidence from real runs only.** The evaluation output in the docs is
+  copied from real runs. When `git diff --cached --check` failed because of
+  an extra blank line at the end of the saved output, I had only the file
+  ending fixed instead of writing the output again.
+
+### Observed trace: `player-win`
+
+Fixed synthetic data: my secret 63, Vector's secret 27, round limit 8,
+my guesses 40 and 27. These are the two accepted rounds that
+`evaluate.py --case player-win` recorded:
+
+| Round | My guess | My hint | Vector's guess | Vector's hint | Vector's range before → after | Guardrail | Status after |
+|-------|----------|---------|----------------|---------------|-------------------------------|-----------|--------------|
+| 1 | 40 | Too High | 50 | Too Low | 1-100 → 51-100 | accepted | playing |
+| 2 | 27 | Win | 75 | Too High | 51-100 → 51-74 | accepted | player_won |
+
+Vector guessed the middle of its range each time: (1 + 100) // 2 = 50, and
+after "Too Low", (51 + 100) // 2 = 75. This trace is a record of what a
+deterministic algorithm did, not hidden reasoning of a language model.
+
+### Example: a broken engine result is blocked
+
+In `evaluate.py --case guardrail-blocked`, the script builds the correct
+result for guess 40 (secrets 63 and 27), changes its status to
+`player_won`, and uses a temporary `mock.patch` so that the engine returns
+this wrong result. The real inspector stays on. The saved run shows:
+
+- `GuardrailViolation` with the general message "The game produced an
+  invalid round, so it was not accepted.";
+- the inspector's reason: `after.status is 'player_won', expected 'playing'.`;
+- the log line `WARNING duel_service duel_round_rejected round=1
+  stage=guardrail`;
+- the patched engine was called once, the original state did not change,
+  no round was added, and the patch was removed after the case.
+
+### Saved evidence
+
+- [artifacts/execution_examples.txt](artifacts/execution_examples.txt):
+  the real commands and their full output.
+- [artifacts/evaluation.json](artifacts/evaluation.json): the JSON report
+  of all six scenarios with traces and the summary.
+- [evaluate.py](evaluate.py) and
+  [tests/test_evaluate.py](tests/test_evaluate.py): the evaluation script
+  and its tests.
+- [tests/test_guardrails.py](tests/test_guardrails.py): the inspector's
+  rules, each with tests for a broken step.
+
+---
+
+## Base Project History: Game Glitch Investigator
+
+> The sections below come from the base project, "Game Glitch
+> Investigator: The Impossible Guesser". They describe that earlier work,
+> not Number Duel, and are kept as they were (only their headings moved one
+> level down).
+
 > **Stretch features only.** Only fill in the sections that apply to stretch features you attempted. If you did not attempt a stretch feature, leave its section blank or delete it. This file is not required for the core project.
 
 ---
 
-## Agent Workflow (SF8)
+### Agent Workflow (SF8)
 
 > Document your experience using an AI agent (e.g., Cursor Agent, Claude, Copilot) to make multi-step changes autonomously.
 
@@ -28,7 +130,7 @@ I did not have to fix any code. I reviewed the diff and played a game to check t
 
 ---
 
-## Test Generation (SF7)
+### Test Generation (SF7)
 
 > Document how you used AI to help generate or improve tests.
 
@@ -42,7 +144,7 @@ I did not have to fix any code. I reviewed the diff and played a game to check t
 
 ---
 
-## Linting & Style (SF9)
+### Linting & Style (SF9)
 
 **Prompt used:**
 
@@ -90,7 +192,7 @@ tests/test_game_logic.py:52:1: E302 expected 2 blank lines, found 1
 
 ---
 
-## Model Comparison (SF11)
+### Model Comparison (SF11)
 
 > Compare two AI models on the same task.
 
@@ -108,4 +210,3 @@ Both models got the same prompt: the original buggy `check_guess` function and t
 **Which did you prefer and why?**
 
 For the fix I preferred ChatGPT, because it is simpler and fits this codebase. Gemini's version adds an `"Error"` outcome that the rest of the game does not know about. For understanding the bug Gemini was easier to follow, but one of its three claims was wrong, and I only noticed after running the original function. Both models agreed on the real causes, swapped hints and the secret becoming a string, which matches the fix I applied: swap the messages and always pass the secret as a number.
-

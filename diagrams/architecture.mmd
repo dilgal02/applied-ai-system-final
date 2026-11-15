@@ -1,67 +1,63 @@
-flowchart LR
-    %% Architecture of Game Glitch Investigator (Streamlit number guessing game)
-    %% Render: paste into https://mermaid.live or run mmdc -i diagrams/architecture.mmd -o diagrams/architecture.png
+flowchart TD
+    %% Number Duel: architecture of the actual implementation.
+    %% README.md shows the same diagram so GitHub can render it.
 
     player(["Player<br/>(web browser)"])
+    app["app.py<br/>set_page_config + st.navigation"]
 
-    subgraph ui["app.py — Streamlit UI (reruns top to bottom on every click)"]
-        direction TB
-        sidebar["Sidebar<br/>• Difficulty select<br/>• Range and attempts allowed"]
-        history["Sidebar: Guess History<br/>show_history()"]
-        inputs["Main area inputs<br/>• Guess text box<br/>• Submit Guess / New Game buttons<br/>• Show hint checkbox"]
-        handler["Submit handler<br/>(if submit: block)"]
-        feedback["Feedback<br/>• Attempts left<br/>• Colored hint box (HINT_BOX)<br/>• Win / out-of-attempts message<br/>• Game summary table: show_summary()"]
-        debug["Developer Debug Info<br/>(expander)"]
+    subgraph pages["Streamlit pages"]
+        solo["pages/solo.py<br/>Solo Game"]
+        duel["pages/duel.py<br/>Number Duel"]
     end
 
-    subgraph sess["st.session_state (survives reruns)"]
-        s_vals["secret · attempts · score · status<br/>history · rounds"]
+    subgraph session["st.session_state (one browser session)"]
+        solo_state[("Solo keys<br/>secret, attempts, score,<br/>status, history, rounds")]
+        duel_state[("duel_state<br/>frozen DuelState")]
     end
 
-    subgraph logic["logic_utils.py — game logic (pure functions)"]
-        direction TB
-        f_range["get_range_for_difficulty()"]
-        f_parse["parse_guess()"]
-        f_check["check_guess()"]
-        f_close["get_closeness()"]
-        f_score["update_score()"]
-        f_fmt["format_history_line()"]
+    subgraph core["Game core (plain Python, no Streamlit)"]
+        logic["logic_utils.py<br/>parse_guess, check_guess,<br/>get_closeness, update_score"]
+        service["duel_service.safe_play_round"]
+        engine["duel_logic.play_round<br/>(engine)"]
+        bot["bot_agent.py<br/>choose_guess, update_bounds"]
+        candidate["candidate DuelState"]
+        inspector["guardrails.validate_transition<br/>(independent checks)"]
     end
 
-    subgraph tests["tests/test_game_logic.py — pytest (11 tests)"]
-        t_all["Unit and edge-case tests"]
+    rejected["Round not accepted<br/>error message, WARNING log<br/>for engine and guardrail;<br/>old duel_state kept"]
+
+    player --> app
+    app --> solo
+    app --> duel
+
+    solo --> logic
+    solo <--> solo_state
+
+    duel -->|"empty, text, fraction<br/>or out of range"| rejected
+    duel -->|"valid whole number"| service
+    service --> engine
+    engine -->|"hints"| logic
+    engine -->|"bounds and outcome,<br/>no secret number"| bot
+    bot -->|"next guess, new bounds"| engine
+    engine --> candidate
+    engine -->|"ValueError"| rejected
+    candidate --> inspector
+    inspector -->|"accepted"| service
+    service -->|"accepted state"| duel
+    duel -->|"save"| duel_state
+    inspector -->|"GuardrailViolation"| rejected
+
+    subgraph evaluation["Evaluation (no Streamlit, no server)"]
+        evaluate["evaluate.py<br/>6 fixed scenarios"]
+        report[("artifacts/evaluation.json")]
+        fault["mock.patch fault injection<br/>(evaluation only)"]
     end
 
-    %% Player input
-    player -->|"picks difficulty"| sidebar
-    player -->|"types guess, clicks buttons"| inputs
+    evaluate --> service
+    evaluate --> report
+    fault -.->|"replaces play_round<br/>in guardrail-blocked"| service
 
-    %% Setup on page load
-    sidebar -->|"difficulty → (low, high)"| f_range
-    f_range -->|"random secret on first load"| s_vals
-
-    %% New Game
-    inputs -->|"New Game: attempts = 0,<br/>new secret, rounds cleared"| s_vals
-
-    %% Submit flow
-    inputs -->|"Submit + raw text"| handler
-    handler -->|"1. raw text → (ok, guess, error)"| f_parse
-    handler -->|"2. guess, secret → (outcome, hint)"| f_check
-    handler -->|"3. guess, secret → closeness"| f_close
-    handler -->|"4. score, outcome, attempt → new score"| f_score
-    handler <-->|"read / write attempts, score,<br/>status, history, rounds"| s_vals
-    handler -->|"hint, closeness, result"| feedback
-
-    %% Displays that read state
-    s_vals -->|"rounds"| history
-    history -->|"one line per round"| f_fmt
-    s_vals -.->|"shown for debugging"| debug
-
-    %% Output back to the player
-    feedback -->|"rendered page"| player
-    history -->|"rendered page"| player
-
-    %% Tests
-    t_all -.->|"tests"| f_check
-    t_all -.->|"tests"| f_parse
-    t_all -.->|"tests"| f_fmt
+    tests["tests/ (pytest)"]
+    tests -.->|"unit tests"| core
+    tests -.->|"AppTest UI tests"| pages
+    tests -.->|"CLI test"| evaluate
