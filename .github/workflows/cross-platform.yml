@@ -1,0 +1,144 @@
+name: Cross-platform verification
+
+# Manual run only: GitHub Actions → "Cross-platform verification" → Run.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      # Both platforms always finish, even if one of them fails.
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            label: Linux x64, Python 3.13
+            venv_python: .venv/bin/python
+          - os: windows-latest
+            label: Windows x64, Python 3.13
+            venv_python: .venv/Scripts/python.exe
+    defaults:
+      run:
+        # Bash on both systems (Git Bash on Windows): one syntax everywhere.
+        shell: bash
+    env:
+      PY: ${{ matrix.venv_python }}
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+      MERMAID_CLI_VERSION: 12.2.0
+      PUPPETEER_VERSION: 25.17.0
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Create a clean virtual environment
+        run: |
+          python -m venv .venv
+          "$PY" -c "import platform, sys; print(sys.version); print(platform.platform(), platform.machine())"
+          mkdir -p ci-out
+
+      # ---- Architecture diagram: real rendering (Linux only) --------------
+
+      - name: Set up Node.js for Mermaid CLI
+        if: runner.os == 'Linux'
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+
+      - name: Check that README has the exact Mermaid source
+        if: runner.os == 'Linux'
+        run: |
+          python ci/check_reports.py mermaid-copy
+
+      - name: Render diagrams/architecture.mmd to SVG and PNG
+        if: runner.os == 'Linux'
+        run: |
+          MMDC_DIR="$RUNNER_TEMP/mermaid-cli"
+          mkdir -p "$MMDC_DIR"
+          npm install --prefix "$MMDC_DIR" --no-save --no-audit --no-fund \
+            "@mermaid-js/mermaid-cli@$MERMAID_CLI_VERSION" \
+            "puppeteer@$PUPPETEER_VERSION"
+          echo '{"args": ["--no-sandbox", "--disable-setuid-sandbox"]}' \
+            > "$RUNNER_TEMP/puppeteer.json"
+          MMDC="$MMDC_DIR/node_modules/.bin/mmdc"
+          echo "Mermaid CLI $("$MMDC" --version)"
+          "$MMDC" -p "$RUNNER_TEMP/puppeteer.json" \
+            -i diagrams/architecture.mmd -o ci-out/architecture.svg
+          "$MMDC" -p "$RUNNER_TEMP/puppeteer.json" \
+            -i diagrams/architecture.mmd -o ci-out/architecture.png \
+            -w 2400 -b white
+          python ci/check_reports.py rendered \
+            ci-out/architecture.svg ci-out/architecture.png
+
+      # ---- The game alone, without the coach dependencies -------------------
+
+      - name: Install the game requirements only
+        run: |
+          "$PY" -m pip install --upgrade pip
+          "$PY" -m pip install -r requirements.txt
+          "$PY" -m pip check
+          "$PY" -m pip freeze > ci-out/pip-freeze-game.txt
+
+      - name: Run all tests without the coach dependencies
+        run: |
+          "$PY" -c "import importlib.util as u; found = [m for m in ('torch', 'transformers') if u.find_spec(m)]; assert not found, found; print('no coach dependencies installed')"
+          "$PY" -m pytest -q 2>&1 | tee ci-out/pytest-game-only.log
+
+      - name: Run the game evaluation
+        run: |
+          "$PY" evaluate.py --output ci-out/evaluation.json 2>&1 | tee ci-out/evaluate.log
+          "$PY" ci/check_reports.py game ci-out
+
+      # ---- The coach: CPU torch, pinned model, offline inference ------------
+
+      - name: Install CPU-only torch and the coach requirements
+        run: |
+          "$PY" -m pip install torch==2.15.0 --index-url https://download.pytorch.org/whl/cpu
+          "$PY" -m pip install -r requirements-coach.txt
+          "$PY" -m pip check
+          "$PY" -m pip freeze > ci-out/pip-freeze-coach.txt
+          "$PY" -c "import torch; print('torch', torch.__version__, '| CUDA available:', torch.cuda.is_available())"
+
+      - name: Download the pinned model (network is used here)
+        run: |
+          "$PY" coach_model.py download
+
+      - name: Local model smoke check (offline)
+        env:
+          HF_HUB_OFFLINE: "1"
+        run: |
+          "$PY" coach_model.py smoke --output ci-out/local_model_smoke.json 2>&1 | tee ci-out/smoke.log
+
+      - name: Coach quote regression (offline)
+        env:
+          HF_HUB_OFFLINE: "1"
+        run: |
+          "$PY" evaluate_coach.py --suite fraction-regression --answer-format quote --output ci-out/coach_quote_regression.json 2>&1 | tee ci-out/coach_quote_regression.log
+
+      - name: Check the coach reports (not only the exit code)
+        run: |
+          "$PY" ci/check_reports.py coach ci-out
+
+      # ---- Reports and images, also after a failure -----------------------
+
+      - name: Upload CI reports and images
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-reports-${{ runner.os }}
+          path: ci-out/
+          if-no-files-found: warn
+          retention-days: 30
