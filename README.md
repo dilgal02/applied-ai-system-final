@@ -35,6 +35,7 @@ new game state is saved.
 - [Strategy Coach prototype (CLI)](#strategy-coach-prototype-cli)
 - [Design decisions and trade-offs](#design-decisions-and-trade-offs)
 - [Results and limits of testing](#results-and-limits-of-testing)
+- [Cross-platform verification](#cross-platform-verification)
 - [Known limitations](#known-limitations)
 - [Project structure](#project-structure)
 - [Documentation and AI collaboration](#documentation-and-ai-collaboration)
@@ -305,17 +306,39 @@ flowchart TD
 
 ## Setup
 
-Requirements: Python 3 and the packages in
+Requirements: Python 3.13 and the packages in
 [requirements.txt](requirements.txt) (`streamlit>=1.36.0`, `altair<5`,
-`pytest`).
+`pytest`). The commands call the virtual environment's own Python, so no
+activation script is needed.
+
+**macOS / Linux**
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate        # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+python3.13 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python -m streamlit run app.py
 ```
 
-**Tested environment:** Python 3.13.15 and Streamlit 1.60.0.
+**Windows** (PowerShell or cmd)
+
+```powershell
+py -3.13 -m venv .venv
+.venv\Scripts\python.exe -m pip install -r requirements.txt
+.venv\Scripts\python.exe -m streamlit run app.py
+```
+
+The `python ...` commands in the next sections work the same way: use
+`.venv/bin/python` on macOS and Linux, and `.venv\Scripts\python.exe` on
+Windows.
+
+**Tested environments** (details in
+[Cross-platform verification](#cross-platform-verification)):
+
+- macOS 26.6.1 arm64 with Python 3.13.15 (local development);
+- Linux x64 with Python 3.13.18 and Windows Server 2025 x64 with Python
+  3.13.17 (GitHub Actions);
+- Streamlit 1.60.0 everywhere. Streamlit 1.36 is the declared minimum, but
+  it was not tested.
 
 ## Running the app, tests and evaluation
 
@@ -589,9 +612,29 @@ python coach.py --question "Can I submit a fractional guess, and does it use a r
 python evaluate_coach.py --suite fraction-regression --answer-format quote --output artifacts/coach_quote_regression.json
 ```
 
-The coach tools were checked only on macOS 26.6.1 (arm64) with Python
-3.13.15, torch 2.15.0 and transformers 5.23.0, on the CPU. Windows and
-Linux are not verified yet.
+The coach tools were verified on macOS 26.6.1 arm64 (local, torch 2.15.0)
+and on Linux x64 and Windows x64 (GitHub Actions, torch 2.15.0+cpu), all
+with transformers 5.23.0 on the CPU. On Linux and Windows, install the
+CPU-only torch wheel first, then the coach requirements:
+
+```bash
+# Linux
+.venv/bin/python -m pip install torch==2.15.0 --index-url https://download.pytorch.org/whl/cpu
+.venv/bin/python -m pip install -r requirements-coach.txt
+.venv/bin/python coach_model.py download
+HF_HUB_OFFLINE=1 .venv/bin/python coach_model.py smoke
+```
+
+```powershell
+# Windows
+.venv\Scripts\python.exe -m pip install torch==2.15.0 --index-url https://download.pytorch.org/whl/cpu
+.venv\Scripts\python.exe -m pip install -r requirements-coach.txt
+.venv\Scripts\python.exe coach_model.py download
+.venv\Scripts\python.exe coach_model.py smoke
+```
+
+`smoke` and the coach only read local files. `HF_HUB_OFFLINE=1` is an extra
+guard; in PowerShell it is set with `$env:HF_HUB_OFFLINE = "1"`.
 
 ## Design decisions and trade-offs
 
@@ -674,13 +717,82 @@ Limits of this testing:
 - `AppTest` does not render a real browser. The look of the pages was
   checked with browser screenshots during development; there are no
   automated visual tests;
-- only Python 3.13.15 and Streamlit 1.60.0 were tested. Streamlit 1.36 is
-  the declared minimum, but it was not tested;
+- only Python 3.13 (3.13.15 on macOS, 3.13.17 on Windows, 3.13.18 on
+  Linux) and Streamlit 1.60.0 were tested. Streamlit 1.36 is the declared
+  minimum, but it was not tested. Linux and Windows were tested only on
+  GitHub's x64 runners;
 - the real local model is checked only by `coach_model.py smoke`,
   `coach.py` and `evaluate_coach.py` runs, which are not part of pytest.
   The profile comparison has only six questions and one generation per
   profile;
 - there are no load or multi-user tests.
+
+## Cross-platform verification
+
+The GitHub Actions workflow
+[.github/workflows/cross-platform.yml](.github/workflows/cross-platform.yml)
+is started by hand (`workflow_dispatch`). It runs on Ubuntu x64 and Windows
+x64 with Python 3.13, each in a clean virtual environment, and both
+platforms always finish, even if one fails.
+
+1. Only `requirements.txt` is installed: `pip check`, a check that torch and
+   transformers are absent, the full pytest suite, and `evaluate.py` with a
+   JSON report.
+2. CPU-only torch 2.15.0 from the PyTorch CPU index, then
+   `requirements-coach.txt`, `pip check` and `coach_model.py download`.
+3. Only after the download, with `HF_HUB_OFFLINE=1`: `coach_model.py smoke`
+   and `evaluate_coach.py --suite fraction-regression --answer-format
+   quote`.
+4. [ci/check_reports.py](ci/check_reports.py) reads the JSON reports instead
+   of trusting exit codes: 3 searches and 6 generations, the same current
+   context and settings for both profiles, the CPU, the pinned revision,
+   offline inference, and 3 answered, exact full quotes of
+   `rules-valid-guesses` from the specialized profile that match the
+   knowledge file. Rejected baseline answers are expected and do not fail
+   the run.
+5. On Linux, after a check that the README's Mermaid block equals
+   `diagrams/architecture.mmd`, Mermaid CLI renders the diagram to SVG and
+   PNG.
+
+Reports, logs and images are uploaded as Actions artifacts, also after a
+failure. Model weights and caches are not uploaded.
+
+**Successful run:**
+[Actions run 43687614741](https://github.com/dilgal02/applied-ai-system-final/actions/runs/43687614741)
+on commit
+[`33e5885`](https://github.com/dilgal02/applied-ai-system-final/commit/33e5885b538d4e9148e162f553e660a0ebd3bb91).
+
+| | Linux x64 | Windows x64 |
+|---|-----------|-------------|
+| Runner | `ubuntu-latest` (Linux 7.0, glibc 2.43) | `windows-latest` (Windows Server 2025) |
+| Python | 3.13.18 | 3.13.17 |
+| Game only: pytest (torch absent) | 188 passed | 188 passed |
+| `evaluate.py` | 6 of 6 passed | 6 of 6 passed |
+| Coach packages | torch 2.15.0+cpu, transformers 5.23.0 | torch 2.15.0+cpu, transformers 5.23.0 |
+| `coach_model.py smoke` (offline) | PASS | PASS |
+| Quote regression: searches / generations | 3 / 6 | 3 / 6 |
+| Specialized: answered, exact full quotes | 3 of 3 | 3 of 3 |
+| Baseline: answered / `validation_failed` | 1 / 2 | 1 / 2 |
+| Job time | 3 min 17 s | 3 min 40 s |
+
+Both platforms gave the same smoke answer and the same quote results as the
+earlier macOS run. The checks do not require identical times, token counts
+or raw answers.
+
+**Architecture rendering.** In the Linux job, Mermaid CLI 12.2.0 with
+puppeteer 25.17.0 (chrome-headless-shell 157.0.8103.50) rendered
+`diagrams/architecture.mmd` to SVG and to a 3650 × 4200 pixel PNG, which
+can be downloaded from the run's artifacts. The PNG was checked by eye: the
+whole diagram is drawn, all labels are present and readable, there is no
+parser error and nothing is cut off. The diagram is dense, so it reads best
+at full size.
+
+**Earlier attempts.** The first two runs failed on the Linux rendering
+step. Mermaid CLI 12 no longer has the `-w` option (it was replaced by
+`--size`), and then the first version of the SVG check took a CSS rule name
+that every Mermaid SVG contains (`.error-icon`) for an error. Both were
+fixed in the CI configuration; no check was removed. Windows passed in all
+three runs.
 
 ## Known limitations
 
@@ -737,6 +849,8 @@ knowledge/             the game's knowledge files (22 sections)
 requirements-coach.txt optional dependencies for the coach tools
 models/                downloaded model weights (git-ignored)
 tests/                 pytest tests (unit, AppTest UI, CLI)
+ci/check_reports.py    checks of the CI reports and the rendered diagram
+.github/workflows/     manual cross-platform workflow (Linux, Windows)
 artifacts/             saved evaluation report and real command output
 diagrams/              Mermaid architecture source
 assets/                folder kept for project images

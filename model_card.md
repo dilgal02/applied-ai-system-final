@@ -11,7 +11,7 @@
 | Prompt profiles | `baseline` (default) and `specialized`, which adds three few-shot examples; prompt specialization only, no weight training |
 | Not used | No training or fine-tuning, no external AI inference API, no Coach in the interface |
 | Advanced feature | A built-in reliability system that checks every duel step before it is saved |
-| Tested environment | Python 3.13.15, Streamlit 1.60.0; coach tools on macOS arm64 with torch 2.15.0 and transformers 5.23.0, CPU only |
+| Tested environment | macOS 26.6.1 arm64 (local, Python 3.13.15); Linux x64 and Windows Server 2025 x64 (GitHub Actions, Python 3.13.18 and 3.13.17); Streamlit 1.60.0; coach tools with torch 2.15.0 (CPU) and transformers 5.23.0 on all three |
 | Last confirmed results | 188 automated tests passed; 6 of 6 evaluation scenarios passed |
 
 ## Purpose and intended use
@@ -124,8 +124,9 @@ Limits:
 
 Limits: the model is small and can give wrong or incomplete answers. The
 smoke check only shows that the model runs locally and answers in short
-English; it does not check that answers are correct. Only macOS 26.6.1 on
-arm64 was verified; Windows and Linux are not verified yet. The model is
+English; it does not check that answers are correct. It was verified on
+macOS 26.6.1 arm64 and, in GitHub Actions, on Linux x64 and Windows x64 with
+the CPU-only torch 2.15.0+cpu; other platforms are not verified. The model is
 used by the Coach CLI, not by the game.
 
 ## Knowledge retrieval (separate CLI)
@@ -439,6 +440,33 @@ the quote would have been accepted although it does not answer it. It also
 cannot show that the knowledge files themselves are correct. And the check
 is strict on purpose: the baseline's fractional answer kept the meaning but
 changed one word, and it was rejected.
+
+## Cross-platform verification
+
+A manual GitHub Actions workflow (`.github/workflows/cross-platform.yml`)
+checked the project on Linux x64 (Python 3.13.18) and Windows Server 2025
+x64 (Python 3.13.17), each in a clean virtual environment:
+[run 43687614741](https://github.com/dilgal02/applied-ai-system-final/actions/runs/43687614741)
+on commit `33e5885`.
+
+- With only `requirements.txt` installed (no torch, no transformers), all
+  188 tests passed and `evaluate.py` passed 6 of 6 scenarios on both
+  platforms.
+- With CPU-only torch 2.15.0+cpu and the pinned model, `coach_model.py
+  smoke` passed offline, and the quote regression ran 3 searches and 6
+  generations offline on the CPU. On both platforms the specialized
+  profile gave 3 answered, exact full quotes of `rules-valid-guesses` and
+  the baseline 1 answered and 2 `validation_failed`, the same as on macOS.
+  `ci/check_reports.py` checked this in the JSON reports, not only through
+  exit codes.
+- In the Linux job, Mermaid CLI 12.2.0 rendered the architecture diagram to
+  SVG and PNG. The PNG was checked by eye: complete, readable, no parser
+  error.
+
+Limits: one run per platform on GitHub's x64 runners, with greedy
+decoding. It shows that the same code, pinned model and settings work and
+give these results there. It does not cover ARM Linux or Windows, other
+Python versions or personal machines.
 
 ## State, data and privacy
 
