@@ -40,8 +40,8 @@ Guesser"**. It was a Streamlit number guessing game that came with bugs on
 purpose: the player picked a difficulty, guessed a secret number and got
 "higher / lower" hints, a score and a limited number of attempts. The hints
 were reversed, the secret was compared as text on every second attempt,
-and the attempts counter started at the wrong number, so the game could
-not be won.
+and the attempts counter started at the wrong number. These bugs made the
+hints unreliable and the game confusing to play.
 
 During the base project the bugs above were fixed, the game logic was
 moved into `logic_utils.py` and covered with pytest tests, and the game

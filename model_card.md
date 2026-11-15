@@ -159,3 +159,11 @@ This became `guardrails.validate_transition` together with
 
 This is why Vector is a local, deterministic algorithm and the project
 needs no API keys.
+
+## Future improvements
+
+In the future, I would expand evaluation across all difficulties
+and add randomized inputs. I would also add automated browser
+checks for layout and theme rendering. Finally, I would compare
+other local opponent strategies while keeping the independent
+guardrails.
