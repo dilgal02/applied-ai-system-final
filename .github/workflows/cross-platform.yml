@@ -71,15 +71,20 @@ jobs:
           npm install --prefix "$MMDC_DIR" --no-save --no-audit --no-fund \
             "@mermaid-js/mermaid-cli@$MERMAID_CLI_VERSION" \
             "puppeteer@$PUPPETEER_VERSION"
+          # npm may skip puppeteer's install script, so install the browser
+          # version that this puppeteer release pins, explicitly.
+          "$MMDC_DIR/node_modules/.bin/puppeteer" browsers install \
+            chrome-headless-shell
           echo '{"args": ["--no-sandbox", "--disable-setuid-sandbox"]}' \
             > "$RUNNER_TEMP/puppeteer.json"
           MMDC="$MMDC_DIR/node_modules/.bin/mmdc"
           echo "Mermaid CLI $("$MMDC" --version)"
           "$MMDC" -p "$RUNNER_TEMP/puppeteer.json" \
             -i diagrams/architecture.mmd -o ci-out/architecture.svg
+          # Mermaid CLI 12 has no -w option; --size sets the largest PNG side.
           "$MMDC" -p "$RUNNER_TEMP/puppeteer.json" \
             -i diagrams/architecture.mmd -o ci-out/architecture.png \
-            -w 2400 -b white
+            --size 4200 -b white
           python ci/check_reports.py rendered \
             ci-out/architecture.svg ci-out/architecture.png
 
