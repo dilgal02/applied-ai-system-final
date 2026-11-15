@@ -6,6 +6,9 @@ import streamlit as st
 from duel_logic import DuelState, create_duel
 from duel_service import GuardrailViolation, safe_play_round
 from logic_utils import get_range_for_difficulty
+from ui_style import apply_theme, duel_card
+
+apply_theme()
 
 DIFFICULTIES = ["Easy", "Normal", "Hard"]
 ATTEMPT_LIMITS = {"Easy": 6, "Normal": 8, "Hard": 5}
@@ -21,9 +24,9 @@ DIFFICULTY_WIDGET_KEY = "duel_difficulty_select"
 TEMP_INPUT_PREFIXES = ("duel_guess_input", "duel_secret_input")
 
 HINTS = {
-    "Too Low": "too low, the number is higher",
-    "Too High": "too high, the number is lower",
-    "Win": "correct!",
+    "Too Low": "Too low, the number is higher",
+    "Too High": "Too high, the number is lower",
+    "Win": "Correct!",
 }
 
 GUARDRAIL_MESSAGE = (
@@ -109,48 +112,82 @@ def reset_duel() -> None:
             del st.session_state[key]
 
 
-def show_setup() -> None:
-    saved = st.session_state.get(DIFFICULTY_KEY, "Normal")
-    difficulty = st.selectbox(
-        "Difficulty",
-        DIFFICULTIES,
-        index=DIFFICULTIES.index(saved) if saved in DIFFICULTIES else 1,
-        key=DIFFICULTY_WIDGET_KEY,
-    )
-    st.session_state[DIFFICULTY_KEY] = difficulty
-    low, high = get_range_for_difficulty(difficulty)
-    st.caption(
-        f"Pick a whole number from {low} to {high}. "
-        f"The duel lasts at most {ATTEMPT_LIMITS[difficulty]} rounds."
-    )
+def show_cards(state: DuelState | None) -> None:
+    """Show the two players. The opponent's secret is never on its card."""
+    last = state.rounds[-1] if state is not None and state.rounds else None
+    if state is None:
+        player_tag = "Pick your secret number"
+    else:
+        player_tag = f"Your secret: {state.player_secret}"
 
-    with st.form("duel_setup_form"):
-        player_secret = st.number_input(
-            "Your secret number",
-            min_value=low,
-            max_value=high,
-            value=None,
-            step=1,
-            key=f"duel_secret_input_{difficulty}",
+    player_col, vector_col = st.columns(2, gap="medium")
+    with player_col:
+        duel_card(
+            "You",
+            "player",
+            player_tag,
+            guess=last.player_guess if last else None,
+            hint=HINTS[last.player_outcome] if last else None,
+            won=last is not None and last.player_outcome == "Win",
         )
-        started = st.form_submit_button("Start Duel")
+    with vector_col:
+        duel_card(
+            "🤖 Vector",
+            "vector",
+            "Binary search bot",
+            guess=last.bot_guess if last else None,
+            hint=HINTS[last.bot_outcome] if last else None,
+            won=last is not None and last.bot_outcome == "Win",
+        )
 
-    if started:
-        error = start_duel(difficulty, player_secret)
-        if error:
-            st.error(error)
-        else:
-            st.rerun()
+
+def show_setup() -> None:
+    show_cards(None)
+
+    setup_col, _ = st.columns([3, 2], gap="large")
+    with setup_col:
+        st.subheader("Set up the duel")
+        saved = st.session_state.get(DIFFICULTY_KEY, "Normal")
+        difficulty = st.selectbox(
+            "Difficulty",
+            DIFFICULTIES,
+            index=DIFFICULTIES.index(saved) if saved in DIFFICULTIES else 1,
+            key=DIFFICULTY_WIDGET_KEY,
+        )
+        st.session_state[DIFFICULTY_KEY] = difficulty
+        low, high = get_range_for_difficulty(difficulty)
+        st.caption(
+            f"Pick a whole number from {low} to {high}. "
+            f"The duel lasts at most {ATTEMPT_LIMITS[difficulty]} rounds."
+        )
+
+        with st.form("duel_setup_form"):
+            player_secret = st.number_input(
+                "Your secret number",
+                min_value=low,
+                max_value=high,
+                value=None,
+                step=1,
+                key=f"duel_secret_input_{difficulty}",
+            )
+            started = st.form_submit_button("Start Duel", type="primary")
+
+        if started:
+            error = start_duel(difficulty, player_secret)
+            if error:
+                st.error(error)
+            else:
+                st.rerun()
 
 
 def show_result(state: DuelState) -> None:
-    reveal = f"The opponent's number was {state.bot_secret}."
+    reveal = f"Vector's number was {state.bot_secret}."
     if state.status == "player_won":
         st.success(
-            f"🎉 You won! You guessed the opponent's number first. {reveal}"
+            f"🎉 You won! You guessed Vector's number first. {reveal}"
         )
     elif state.status == "bot_won":
-        st.warning(f"🤖 The opponent guessed your number first. {reveal}")
+        st.warning(f"🤖 Vector guessed your number first. {reveal}")
     else:
         last = state.rounds[-1]
         if last.player_outcome == "Win" and last.bot_outcome == "Win":
@@ -178,41 +215,39 @@ def history_rows(state: DuelState) -> list[dict]:
 
 def show_game(state: DuelState) -> None:
     # The opponent's secret is not shown while the duel is on.
+    show_cards(state)
     st.caption(
-        f"Difficulty: {st.session_state.get(DIFFICULTY_KEY, '')} · "
-        f"Range: {state.low} to {state.high} · "
-        f"Your secret number: {state.player_secret}"
+        f"{st.session_state.get(DIFFICULTY_KEY, '')} · "
+        f"numbers {state.low} to {state.high} · "
+        f"up to {state.attempt_limit} rounds"
     )
+
     played = len(state.rounds)
-    played_col, left_col = st.columns(2)
-    played_col.metric("Rounds played", played)
-    left_col.metric("Rounds left", state.attempt_limit - played)
+    action_col, stats_col = st.columns([3, 2], gap="large")
 
-    if state.rounds:
-        last = state.rounds[-1]
-        st.subheader(f"Round {played}")
-        st.write(
-            f"**You** guessed {last.player_guess}: "
-            f"{HINTS[last.player_outcome]}"
-        )
-        st.write(
-            f"**Opponent** guessed {last.bot_guess}: "
-            f"{HINTS[last.bot_outcome]}"
-        )
+    with stats_col:
+        played_col, left_col = st.columns(2)
+        played_col.metric("Rounds played", played)
+        left_col.metric("Rounds left", state.attempt_limit - played)
 
-    if state.status == "playing":
-        with st.form("duel_guess_form"):
-            # A new key each round gives an empty field after a good move.
-            raw_guess = st.text_input(
-                "Your guess", key=f"duel_guess_input_{played}"
-            )
-            submitted = st.form_submit_button("Submit Guess")
-        if submitted:
-            submit_guess(state, raw_guess)
-        if st.session_state.get(ERROR_KEY):
-            st.error(st.session_state[ERROR_KEY])
-    else:
-        show_result(state)
+    with action_col:
+        if state.status == "playing":
+            with st.form("duel_guess_form"):
+                # A new key each round gives an empty field after a move.
+                raw_guess = st.text_input(
+                    "Your guess", key=f"duel_guess_input_{played}"
+                )
+                submitted = st.form_submit_button(
+                    "Submit Guess", type="primary"
+                )
+            if submitted:
+                submit_guess(state, raw_guess)
+            if st.session_state.get(ERROR_KEY):
+                st.error(st.session_state[ERROR_KEY])
+        else:
+            show_result(state)
+
+        # One New Duel button, both during the duel and after it ends.
         st.button("New Duel", key="duel_new_button", on_click=reset_duel)
 
     if state.rounds:
@@ -221,13 +256,15 @@ def show_game(state: DuelState) -> None:
 
 
 st.title("Number Duel")
+st.caption("You against 🤖 Vector, a bot that plays binary search.")
 
-st.subheader("Rules")
-st.markdown(
-    "- You and the computer each pick a secret number.\n"
-    "- Every round, both of you get one guess at the other's number.\n"
-    "- If you both guess right in the same round, the duel is a draw."
-)
+with st.expander("How to play"):
+    st.markdown(
+        "- You and the computer each pick a secret number.\n"
+        "- Every round, both of you get one guess at the other's number.\n"
+        "- If you both guess right in the same round, the duel is a draw.\n"
+        "- Vector always guesses the middle of the numbers still possible."
+    )
 
 duel_state = st.session_state.get(STATE_KEY)
 if duel_state is None:

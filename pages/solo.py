@@ -10,6 +10,9 @@ from logic_utils import (
     format_history_line,
     update_score,
 )
+from ui_style import apply_theme
+
+apply_theme()
 
 # UI: each closeness level gets its own colored box.
 HINT_BOX = {
@@ -23,6 +26,7 @@ DIFFICULTIES = ["Easy", "Normal", "Hard"]
 
 
 st.title("Solo Game")
+st.caption("Find the hidden number before your attempts run out.")
 
 st.sidebar.header("Settings")
 
@@ -85,14 +89,33 @@ if "history" not in st.session_state:
 if "rounds" not in st.session_state:
     st.session_state.rounds = []
 
-# FEATURE: Guess History in the sidebar. The box is a placeholder so it can
-# be redrawn right after a new guess is added.
-st.sidebar.header("Guess History")
-history_box = st.sidebar.empty()
+# UI: the guess area is on the left, game status and history on the right.
+# On a narrow screen the two columns stack.
+guess_col, info_col = st.columns([3, 2], gap="large")
+
+with info_col:
+    # Status and history are placeholders, so they can be redrawn right
+    # after a new guess.
+    st.subheader("Game status")
+    status_box = st.empty()
+    # FEATURE: Guess History, now a block next to the game.
+    st.subheader("Guess history")
+    history_box = st.empty()
+
+
+def show_status():
+    """Show difficulty and score as small cards, with range and limit."""
+    with status_box.container():
+        difficulty_col, score_col = st.columns(2)
+        difficulty_col.metric("Difficulty", difficulty)
+        score_col.metric("Score", st.session_state.score)
+        st.caption(
+            f"Numbers {low} to {high} · {attempt_limit} attempts per game"
+        )
 
 
 def show_history():
-    """List every valid guess of this game in the sidebar, newest first."""
+    """List every valid guess of this game, newest first."""
     rounds = st.session_state.rounds
     if not rounds:
         history_box.caption("No guesses yet.")
@@ -105,14 +128,8 @@ def show_history():
     history_box.markdown("\n".join(f"- {line}" for line in lines))
 
 
+show_status()
 show_history()
-
-st.subheader("Make a guess")
-
-# FIX: This box is drawn before the guess is counted, so "Attempts left"
-# was one guess behind. Claude Code made it a placeholder that is redrawn
-# after each guess.
-attempts_box = st.empty()
 
 
 def show_attempts_left():
@@ -122,9 +139,6 @@ def show_attempts_left():
     )
 
 
-show_attempts_left()
-
-
 def show_summary():
     """Show a table of every valid guess in this game."""
     if st.session_state.rounds:
@@ -132,94 +146,97 @@ def show_summary():
         st.dataframe(st.session_state.rounds, hide_index=True)
 
 
-with st.expander("Developer Debug Info"):
-    st.write("Secret:", st.session_state.secret)
-    st.write("Attempts:", st.session_state.attempts)
-    st.write("Score:", st.session_state.score)
-    st.write("Difficulty:", difficulty)
-    st.write("History:", st.session_state.history)
+with guess_col, st.container(border=True):
+    st.subheader("Make a guess")
 
-raw_guess = st.text_input(
-    "Enter your guess:",
-    key=f"guess_input_{difficulty}"
-)
+    # FIX: This box is drawn before the guess is counted, so "Attempts left"
+    # was one guess behind. Claude Code made it a placeholder that is redrawn
+    # after each guess.
+    attempts_box = st.empty()
+    show_attempts_left()
 
-col1, col2, col3 = st.columns(3)
-with col1:
-    submit = st.button("Submit Guess 🚀")
-with col2:
-    new_game = st.button("New Game 🔁")
-with col3:
-    show_hint = st.checkbox("Show hint", value=True)
+    raw_guess = st.text_input(
+        "Enter your guess:",
+        key=f"guess_input_{difficulty}"
+    )
 
-if new_game:
-    st.session_state.attempts = 0
-    st.session_state.secret = random.randint(low, high)
-    st.session_state.rounds = []
-    st.session_state.status = "playing"
-    st.session_state.score = 0
-    st.session_state.history = []
-    st.success("New game started.")
-    st.rerun()
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        submit = st.button("Submit Guess 🚀", type="primary")
+    with col2:
+        new_game = st.button("New Game 🔁")
+    with col3:
+        show_hint = st.checkbox("Show hint", value=True)
 
-if st.session_state.status != "playing":
-    if st.session_state.status == "won":
-        st.success("You already won. Start a new game to play again.")
-    else:
-        st.error("Game over. Start a new game to try again.")
-    show_summary()
-    st.stop()
+    if new_game:
+        st.session_state.attempts = 0
+        st.session_state.secret = random.randint(low, high)
+        st.session_state.rounds = []
+        st.session_state.status = "playing"
+        st.session_state.score = 0
+        st.session_state.history = []
+        st.success("New game started.")
+        st.rerun()
 
-if submit:
-    ok, guess_int, err = parse_guess(raw_guess)
-
-    if not ok:
-        st.session_state.history.append(raw_guess)
-        st.error(err)
-    else:
-        st.session_state.attempts += 1
-        show_attempts_left()
-
-        st.session_state.history.append(guess_int)
-
-        # FIX: The secret was turned into a string on every even attempt,
-        # so the hints changed between attempts. I asked Claude Code to
-        # always pass a number.
-        outcome, message = check_guess(guess_int, st.session_state.secret)
-
-        closeness = get_closeness(guess_int, st.session_state.secret)
-        st.session_state.rounds.append({
-            "Attempt": st.session_state.attempts,
-            "Guess": guess_int,
-            "Hint": message,
-            "Closeness": closeness,
-        })
-        show_history()
-
-        if show_hint:
-            HINT_BOX[closeness](f"{message}  {closeness}")
-
-        st.session_state.score = update_score(
-            current_score=st.session_state.score,
-            outcome=outcome,
-            attempt_number=st.session_state.attempts,
-        )
-
-        if outcome == "Win":
-            st.balloons()
-            st.session_state.status = "won"
-            st.success(
-                f"You won! The secret was {st.session_state.secret}. "
-                f"Final score: {st.session_state.score}"
-            )
+    if st.session_state.status != "playing":
+        if st.session_state.status == "won":
+            st.success("You already won. Start a new game to play again.")
         else:
-            if st.session_state.attempts >= attempt_limit:
-                st.session_state.status = "lost"
-                st.error(
-                    f"Out of attempts! "
-                    f"The secret was {st.session_state.secret}. "
-                    f"Score: {st.session_state.score}"
-                )
+            st.error("Game over. Start a new game to try again.")
+        show_summary()
+        st.stop()
 
-        if st.session_state.status != "playing":
-            show_summary()
+    if submit:
+        ok, guess_int, err = parse_guess(raw_guess)
+
+        if not ok:
+            st.session_state.history.append(raw_guess)
+            st.error(err)
+        else:
+            st.session_state.attempts += 1
+            show_attempts_left()
+
+            st.session_state.history.append(guess_int)
+
+            # FIX: The secret was turned into a string on every even attempt,
+            # so the hints changed between attempts. I asked Claude Code to
+            # always pass a number.
+            outcome, message = check_guess(guess_int, st.session_state.secret)
+
+            closeness = get_closeness(guess_int, st.session_state.secret)
+            st.session_state.rounds.append({
+                "Attempt": st.session_state.attempts,
+                "Guess": guess_int,
+                "Hint": message,
+                "Closeness": closeness,
+            })
+            show_history()
+
+            if show_hint:
+                HINT_BOX[closeness](f"{message}  {closeness}")
+
+            st.session_state.score = update_score(
+                current_score=st.session_state.score,
+                outcome=outcome,
+                attempt_number=st.session_state.attempts,
+            )
+            show_status()
+
+            if outcome == "Win":
+                st.balloons()
+                st.session_state.status = "won"
+                st.success(
+                    f"You won! The secret was {st.session_state.secret}. "
+                    f"Final score: {st.session_state.score}"
+                )
+            else:
+                if st.session_state.attempts >= attempt_limit:
+                    st.session_state.status = "lost"
+                    st.error(
+                        f"Out of attempts! "
+                        f"The secret was {st.session_state.secret}. "
+                        f"Score: {st.session_state.score}"
+                    )
+
+            if st.session_state.status != "playing":
+                show_summary()

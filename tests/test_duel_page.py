@@ -1,5 +1,6 @@
 import copy
 import random
+import re
 from dataclasses import asdict, replace
 from pathlib import Path
 
@@ -76,7 +77,9 @@ def visible_text(at):
         parts += [element.value for element in getattr(at, kind)]
     parts += [f"{metric.label} {metric.value}" for metric in at.metric]
     parts += [table.value.to_string() for table in at.dataframe]
-    return "\n".join(parts)
+    text = "\n".join(parts)
+    # The shared CSS is not text for the user, so only <style> is dropped.
+    return re.sub(r"<style\b.*?</style>", "", text, flags=re.S | re.I)
 
 
 def test_start_and_one_round(monkeypatch):
@@ -253,6 +256,46 @@ def test_new_duel_does_not_change_solo(monkeypatch):
     guess(at, "10")
     button(at, "New Duel").click().run()
     assert not at.exception
+    assert {key: at.session_state[key] for key in SOLO_KEYS} == solo
+
+    at.switch_page(SOLO_PAGE).run()
+    assert not at.exception
+    assert {key: at.session_state[key] for key in SOLO_KEYS} == solo
+
+
+def test_new_duel_during_play_returns_to_setup(monkeypatch):
+    at = AppTest.from_file(APP, default_timeout=20)
+    at.run()
+    # One solo guess, so the solo game has real progress to protect.
+    at.session_state["secret"] = 70
+    at.text_input(key="guess_input_Normal").input("30")
+    next(b for b in at.button if b.label.startswith("Submit Guess")).click()
+    at.run()
+    assert not at.exception
+    solo = {key: copy.deepcopy(at.session_state[key]) for key in SOLO_KEYS}
+
+    at.switch_page(DUEL_PAGE).run()
+    # Hard is 1-50: Vector guesses 25 (too low for 40), the player's 20
+    # is too high for 10, so the duel goes on.
+    start_duel(at, monkeypatch, "Hard", player_secret=40, bot_secret=10)
+    guess(at, "20")
+    assert at.session_state["duel_state"].status == "playing"
+    assert len(at.dataframe) == 1
+    # New Duel is there during the duel, as one button.
+    assert [b.label for b in at.button].count("New Duel") == 1
+    # Something typed but not sent yet must not survive New Duel.
+    at.text_input(key="duel_guess_input_1").input("33")
+
+    button(at, "New Duel").click().run()
+
+    assert not at.exception
+    assert "duel_state" not in at.session_state
+    assert has_button(at, "Start Duel")
+    assert not has_button(at, "Submit Guess")
+    assert len(at.dataframe) == 0
+    assert at.selectbox(key="duel_difficulty_select").value == "Hard"
+    assert at.number_input(key="duel_secret_input_Hard").value is None
+    assert "duel_guess_input_1" not in at.session_state
     assert {key: at.session_state[key] for key in SOLO_KEYS} == solo
 
     at.switch_page(SOLO_PAGE).run()
