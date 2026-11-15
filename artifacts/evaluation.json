@@ -1,0 +1,321 @@
+{
+  "evaluation": "Number Duel",
+  "notes": [
+    "All numbers are fixed synthetic test data (range 1-100).",
+    "Traces show observed moves of the deterministic binary-search bot and guardrail decisions, not hidden reasoning of a language model."
+  ],
+  "range": [
+    1,
+    100
+  ],
+  "results": [
+    {
+      "name": "player-win",
+      "inputs": {
+        "player_secret": 63,
+        "bot_secret": 27,
+        "attempt_limit": 8,
+        "guesses": [
+          40,
+          27
+        ]
+      },
+      "expected": {
+        "status": "player_won"
+      },
+      "actual": {
+        "status": "player_won",
+        "rounds": 2
+      },
+      "trace": [
+        {
+          "round": 1,
+          "player_guess": 40,
+          "player_outcome": "Too High",
+          "bot_guess": 50,
+          "bot_outcome": "Too Low",
+          "bot_range_before": [
+            1,
+            100
+          ],
+          "bot_range_after": [
+            51,
+            100
+          ],
+          "guardrail": "accepted",
+          "status_after": "playing"
+        },
+        {
+          "round": 2,
+          "player_guess": 27,
+          "player_outcome": "Win",
+          "bot_guess": 75,
+          "bot_outcome": "Too High",
+          "bot_range_before": [
+            51,
+            100
+          ],
+          "bot_range_after": [
+            51,
+            74
+          ],
+          "guardrail": "accepted",
+          "status_after": "player_won"
+        }
+      ],
+      "checks": [
+        {
+          "check": "status is player_won",
+          "passed": true
+        },
+        {
+          "check": "one accepted round per guess",
+          "passed": true
+        }
+      ],
+      "result": "PASS"
+    },
+    {
+      "name": "bot-win",
+      "inputs": {
+        "player_secret": 50,
+        "bot_secret": 27,
+        "attempt_limit": 8,
+        "guesses": [
+          40
+        ]
+      },
+      "expected": {
+        "status": "bot_won"
+      },
+      "actual": {
+        "status": "bot_won",
+        "rounds": 1
+      },
+      "trace": [
+        {
+          "round": 1,
+          "player_guess": 40,
+          "player_outcome": "Too High",
+          "bot_guess": 50,
+          "bot_outcome": "Win",
+          "bot_range_before": [
+            1,
+            100
+          ],
+          "bot_range_after": [
+            50,
+            50
+          ],
+          "guardrail": "accepted",
+          "status_after": "bot_won"
+        }
+      ],
+      "checks": [
+        {
+          "check": "status is bot_won",
+          "passed": true
+        },
+        {
+          "check": "one accepted round per guess",
+          "passed": true
+        }
+      ],
+      "result": "PASS"
+    },
+    {
+      "name": "simultaneous-win",
+      "inputs": {
+        "player_secret": 50,
+        "bot_secret": 27,
+        "attempt_limit": 8,
+        "guesses": [
+          27
+        ]
+      },
+      "expected": {
+        "status": "draw"
+      },
+      "actual": {
+        "status": "draw",
+        "rounds": 1
+      },
+      "trace": [
+        {
+          "round": 1,
+          "player_guess": 27,
+          "player_outcome": "Win",
+          "bot_guess": 50,
+          "bot_outcome": "Win",
+          "bot_range_before": [
+            1,
+            100
+          ],
+          "bot_range_after": [
+            50,
+            50
+          ],
+          "guardrail": "accepted",
+          "status_after": "draw"
+        }
+      ],
+      "checks": [
+        {
+          "check": "status is draw",
+          "passed": true
+        },
+        {
+          "check": "one accepted round per guess",
+          "passed": true
+        }
+      ],
+      "result": "PASS"
+    },
+    {
+      "name": "limit-draw",
+      "inputs": {
+        "player_secret": 63,
+        "bot_secret": 27,
+        "attempt_limit": 1,
+        "guesses": [
+          40
+        ]
+      },
+      "expected": {
+        "status": "draw"
+      },
+      "actual": {
+        "status": "draw",
+        "rounds": 1
+      },
+      "trace": [
+        {
+          "round": 1,
+          "player_guess": 40,
+          "player_outcome": "Too High",
+          "bot_guess": 50,
+          "bot_outcome": "Too Low",
+          "bot_range_before": [
+            1,
+            100
+          ],
+          "bot_range_after": [
+            51,
+            100
+          ],
+          "guardrail": "accepted",
+          "status_after": "draw"
+        }
+      ],
+      "checks": [
+        {
+          "check": "status is draw",
+          "passed": true
+        },
+        {
+          "check": "one accepted round per guess",
+          "passed": true
+        }
+      ],
+      "result": "PASS"
+    },
+    {
+      "name": "invalid-input",
+      "inputs": {
+        "player_secret": 63,
+        "bot_secret": 27,
+        "attempt_limit": 8,
+        "guess": 101
+      },
+      "expected": {
+        "exception": "ValueError",
+        "not_exception": "GuardrailViolation",
+        "state_unchanged": true,
+        "rounds": 0
+      },
+      "actual": {
+        "exception": "ValueError",
+        "message": "player_guess 101 is outside the range 1-100.",
+        "state_unchanged": true,
+        "rounds": 0
+      },
+      "trace": [],
+      "checks": [
+        {
+          "check": "ValueError raised",
+          "passed": true
+        },
+        {
+          "check": "error came from the engine, not GuardrailViolation",
+          "passed": true
+        },
+        {
+          "check": "state unchanged",
+          "passed": true
+        },
+        {
+          "check": "no round added",
+          "passed": true
+        }
+      ],
+      "result": "PASS"
+    },
+    {
+      "name": "guardrail-blocked",
+      "inputs": {
+        "player_secret": 63,
+        "bot_secret": 27,
+        "attempt_limit": 8,
+        "guess": 40,
+        "fake_status": "player_won"
+      },
+      "expected": {
+        "exception": "GuardrailViolation",
+        "state_unchanged": true,
+        "rounds": 0
+      },
+      "actual": {
+        "exception": "GuardrailViolation",
+        "message": "The game produced an invalid round, so it was not accepted.",
+        "inspector_reason": "after.status is 'player_won', expected 'playing'.",
+        "engine_calls": 1,
+        "state_unchanged": true,
+        "rounds": 0,
+        "patch_removed": true
+      },
+      "trace": [],
+      "checks": [
+        {
+          "check": "GuardrailViolation raised",
+          "passed": true
+        },
+        {
+          "check": "real inspector gave the reason",
+          "passed": true
+        },
+        {
+          "check": "patched engine was called once",
+          "passed": true
+        },
+        {
+          "check": "state unchanged",
+          "passed": true
+        },
+        {
+          "check": "no round added",
+          "passed": true
+        },
+        {
+          "check": "patch removed after the case",
+          "passed": true
+        }
+      ],
+      "result": "PASS"
+    }
+  ],
+  "summary": {
+    "passed": 6,
+    "failed": 0,
+    "total": 6
+  }
+}

@@ -1,0 +1,139 @@
+$ .venv/bin/python evaluate.py --output artifacts/evaluation.json
+Number Duel evaluation
+Note: All numbers are fixed synthetic test data (range 1-100).
+Note: Traces show observed moves of the deterministic binary-search bot and guardrail decisions, not hidden reasoning of a language model.
+
+[1/6] player-win
+  input:    player_secret=63, bot_secret=27, attempt_limit=8, guesses=[40, 27]
+  expected: status='player_won'
+  log:      INFO duel_service duel_round_accepted round=1 status=playing
+  log:      INFO duel_service duel_round_accepted round=2 status=player_won
+  trace:
+    round 1: you 40 -> Too High | Vector 50 -> Too Low | bot range 1-100 -> 51-100 | guardrail: accepted | status: playing
+    round 2: you 27 -> Win | Vector 75 -> Too High | bot range 51-100 -> 51-74 | guardrail: accepted | status: player_won
+  actual:   status='player_won', rounds=2
+  check:    [ok] status is player_won
+  check:    [ok] one accepted round per guess
+  result:   PASS
+
+[2/6] bot-win
+  input:    player_secret=50, bot_secret=27, attempt_limit=8, guesses=[40]
+  expected: status='bot_won'
+  log:      INFO duel_service duel_round_accepted round=1 status=bot_won
+  trace:
+    round 1: you 40 -> Too High | Vector 50 -> Win | bot range 1-100 -> 50-50 | guardrail: accepted | status: bot_won
+  actual:   status='bot_won', rounds=1
+  check:    [ok] status is bot_won
+  check:    [ok] one accepted round per guess
+  result:   PASS
+
+[3/6] simultaneous-win
+  input:    player_secret=50, bot_secret=27, attempt_limit=8, guesses=[27]
+  expected: status='draw'
+  log:      INFO duel_service duel_round_accepted round=1 status=draw
+  trace:
+    round 1: you 27 -> Win | Vector 50 -> Win | bot range 1-100 -> 50-50 | guardrail: accepted | status: draw
+  actual:   status='draw', rounds=1
+  check:    [ok] status is draw
+  check:    [ok] one accepted round per guess
+  result:   PASS
+
+[4/6] limit-draw
+  input:    player_secret=63, bot_secret=27, attempt_limit=1, guesses=[40]
+  expected: status='draw'
+  log:      INFO duel_service duel_round_accepted round=1 status=draw
+  trace:
+    round 1: you 40 -> Too High | Vector 50 -> Too Low | bot range 1-100 -> 51-100 | guardrail: accepted | status: draw
+  actual:   status='draw', rounds=1
+  check:    [ok] status is draw
+  check:    [ok] one accepted round per guess
+  result:   PASS
+
+[5/6] invalid-input
+  input:    player_secret=63, bot_secret=27, attempt_limit=8, guess=101
+  expected: exception='ValueError', not_exception='GuardrailViolation', state_unchanged=True, rounds=0
+  log:      WARNING duel_service duel_round_rejected round=1 stage=engine
+  actual:   exception='ValueError', message='player_guess 101 is outside the range 1-100.', state_unchanged=True, rounds=0
+  check:    [ok] ValueError raised
+  check:    [ok] error came from the engine, not GuardrailViolation
+  check:    [ok] state unchanged
+  check:    [ok] no round added
+  result:   PASS
+
+[6/6] guardrail-blocked
+  input:    player_secret=63, bot_secret=27, attempt_limit=8, guess=40, fake_status='player_won'
+  expected: exception='GuardrailViolation', state_unchanged=True, rounds=0
+  log:      WARNING duel_service duel_round_rejected round=1 stage=guardrail
+  actual:   exception='GuardrailViolation', message='The game produced an invalid round, so it was not accepted.', inspector_reason="after.status is 'player_won', expected 'playing'.", engine_calls=1, state_unchanged=True, rounds=0, patch_removed=True
+  check:    [ok] GuardrailViolation raised
+  check:    [ok] real inspector gave the reason
+  check:    [ok] patched engine was called once
+  check:    [ok] state unchanged
+  check:    [ok] no round added
+  check:    [ok] patch removed after the case
+  result:   PASS
+
+passed: 6  failed: 0  total: 6
+report saved: artifacts/evaluation.json
+[exit code: 0]
+
+$ .venv/bin/python evaluate.py --case player-win
+Number Duel evaluation
+Note: All numbers are fixed synthetic test data (range 1-100).
+Note: Traces show observed moves of the deterministic binary-search bot and guardrail decisions, not hidden reasoning of a language model.
+
+[1/1] player-win
+  input:    player_secret=63, bot_secret=27, attempt_limit=8, guesses=[40, 27]
+  expected: status='player_won'
+  log:      INFO duel_service duel_round_accepted round=1 status=playing
+  log:      INFO duel_service duel_round_accepted round=2 status=player_won
+  trace:
+    round 1: you 40 -> Too High | Vector 50 -> Too Low | bot range 1-100 -> 51-100 | guardrail: accepted | status: playing
+    round 2: you 27 -> Win | Vector 75 -> Too High | bot range 51-100 -> 51-74 | guardrail: accepted | status: player_won
+  actual:   status='player_won', rounds=2
+  check:    [ok] status is player_won
+  check:    [ok] one accepted round per guess
+  result:   PASS
+
+passed: 1  failed: 0  total: 1
+[exit code: 0]
+
+$ .venv/bin/python evaluate.py --case simultaneous-win
+Number Duel evaluation
+Note: All numbers are fixed synthetic test data (range 1-100).
+Note: Traces show observed moves of the deterministic binary-search bot and guardrail decisions, not hidden reasoning of a language model.
+
+[1/1] simultaneous-win
+  input:    player_secret=50, bot_secret=27, attempt_limit=8, guesses=[27]
+  expected: status='draw'
+  log:      INFO duel_service duel_round_accepted round=1 status=draw
+  trace:
+    round 1: you 27 -> Win | Vector 50 -> Win | bot range 1-100 -> 50-50 | guardrail: accepted | status: draw
+  actual:   status='draw', rounds=1
+  check:    [ok] status is draw
+  check:    [ok] one accepted round per guess
+  result:   PASS
+
+passed: 1  failed: 0  total: 1
+[exit code: 0]
+
+$ .venv/bin/python evaluate.py --case guardrail-blocked
+Number Duel evaluation
+Note: All numbers are fixed synthetic test data (range 1-100).
+Note: Traces show observed moves of the deterministic binary-search bot and guardrail decisions, not hidden reasoning of a language model.
+
+[1/1] guardrail-blocked
+  input:    player_secret=63, bot_secret=27, attempt_limit=8, guess=40, fake_status='player_won'
+  expected: exception='GuardrailViolation', state_unchanged=True, rounds=0
+  log:      WARNING duel_service duel_round_rejected round=1 stage=guardrail
+  actual:   exception='GuardrailViolation', message='The game produced an invalid round, so it was not accepted.', inspector_reason="after.status is 'player_won', expected 'playing'.", engine_calls=1, state_unchanged=True, rounds=0, patch_removed=True
+  check:    [ok] GuardrailViolation raised
+  check:    [ok] real inspector gave the reason
+  check:    [ok] patched engine was called once
+  check:    [ok] state unchanged
+  check:    [ok] no round added
+  check:    [ok] patch removed after the case
+  result:   PASS
+
+passed: 1  failed: 0  total: 1
+[exit code: 0]
