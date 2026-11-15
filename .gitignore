@@ -21,6 +21,9 @@ pip-wheel-metadata/
 # Streamlit
 .streamlit/secrets.toml
 
+# Local model weights for the coach (python coach_model.py download)
+models/
+
 # Test and coverage artifacts
 .pytest_cache/
 .coverage
