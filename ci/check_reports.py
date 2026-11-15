@@ -176,8 +176,14 @@ def check_rendered(svg_path: Path, png_path: Path) -> int:
     svg = svg_path.read_text(encoding="utf-8")
     checks.require("<svg" in svg and len(svg) > 10_000,
                    f"SVG exists ({len(svg)} characters)")
-    for marker in ("Syntax error", "Parse error", "error-icon"):
+    for marker in ("Syntax error", "Parse error"):
         checks.require(marker not in svg, f"no {marker!r} in the SVG")
+    # Every Mermaid SVG has CSS rules named .error-icon / .error-text, so
+    # look for an element that uses them: that is what an error render has.
+    checks.require(
+        not re.search(r'class="[^"]*\berror-(icon|text)\b', svg),
+        "no error-icon / error-text element in the SVG",
+    )
     for label in ("app.py", "safe_play_round", "validate_transition",
                   "BM25 index", "LocalGenerator", "coach.py",
                   "evaluate_coach.py", "tests/ (pytest)"):
