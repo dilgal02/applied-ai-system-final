@@ -3,6 +3,8 @@
     python evaluate_coach.py --output artifacts/coach_specialization.json
     python evaluate_coach.py --suite fraction-regression \\
         --output artifacts/coach_fraction_regression.json
+    python evaluate_coach.py --suite fraction-regression \\
+        --answer-format quote --output artifacts/coach_quote_regression.json
 
 Suites: "specialization" (default, six questions) and "fraction-regression"
 (three questions about fractional input). After the error analysis both are
@@ -28,11 +30,16 @@ import coach
 import coach_model
 import coach_retrieval
 from coach_prompts import (
+    ANSWER_FORMATS,
     BASELINE,
+    DEFAULT_ANSWER_FORMAT,
     FEW_SHOT_EXAMPLES,
     PROFILES,
+    QUOTE,
+    QUOTE_SYSTEM_PROMPT,
     SPECIALIZED,
     example_messages,
+    quote_example_answer,
 )
 
 # Fixed before the first real run; not changed after seeing results.
@@ -94,7 +101,26 @@ def count_sentences(answer: str) -> int:
                if any(char.isalpha() for char in part))
 
 
+def quote_metrics(result) -> dict:
+    """Metrics for the quote format, read from the coach's own checks."""
+    passed = {item["key"]: item["passed"] for item in result.checks
+              if "key" in item}
+    return {
+        "valid_json": passed.get("valid_json", False),
+        "selected_source_id": (result.citations[0]
+                               if result.citations else None),
+        "allowed_source": passed.get("allowed_source", False),
+        "exact_full_quote": passed.get("exact_full_quote", False),
+        "status": result.status,
+        "generated_tokens": (result.generation or {}).get(
+            "generated_tokens"
+        ),
+    }
+
+
 def answer_metrics(result) -> dict:
+    if result.answer_format == QUOTE:
+        return quote_metrics(result)
     allowed = {source["source_id"] for source in result.sources}
     unknown = [citation for citation in result.citations
                if citation not in allowed]
@@ -129,7 +155,8 @@ class CountingGenerator:
         return environment() if callable(environment) else None
 
 
-def summarize(rows: list, profile: str) -> dict:
+def summarize(rows: list, profile: str,
+              answer_format: str = DEFAULT_ANSWER_FORMAT) -> dict:
     metrics = [row["runs"][profile]["metrics"] for row in rows
                if row["runs"][profile]["generator_called"]]
     count = len(metrics)
@@ -138,6 +165,19 @@ def summarize(rows: list, profile: str) -> dict:
         values = [m[key] for m in metrics if m[key] is not None]
         return round(sum(values) / len(values), 1) if values else None
 
+    if answer_format == QUOTE:
+        return {
+            "answers": count,
+            "valid_json": sum(m["valid_json"] for m in metrics),
+            "allowed_source": sum(m["allowed_source"] for m in metrics),
+            "exact_full_quote": sum(m["exact_full_quote"] for m in metrics),
+            "answered": sum(m["status"] == coach.ANSWERED for m in metrics),
+            "validation_failed": sum(m["status"] == coach.VALIDATION_FAILED
+                                     for m in metrics),
+            "abstained": sum(m["status"] == coach.ABSTAINED
+                             for m in metrics),
+            "mean_generated_tokens": mean("generated_tokens"),
+        }
     return {
         "answers": count,
         "mean_words_without_citations": mean("words_without_citations"),
@@ -155,7 +195,8 @@ def summarize(rows: list, profile: str) -> dict:
 
 
 def run_comparison(questions=QUESTIONS, *, generator=None,
-                   search=None, suite=DEFAULT_SUITE) -> dict:
+                   search=None, suite=DEFAULT_SUITE,
+                   answer_format=DEFAULT_ANSWER_FORMAT) -> dict:
     """Run both profiles on every question and collect the results."""
     search = search or coach_retrieval.search
     counting = CountingGenerator(generator or coach_model.get_generator())
@@ -172,7 +213,7 @@ def run_comparison(questions=QUESTIONS, *, generator=None,
         runs = {}
         for profile in PROFILES:
             result = coach.ask_coach(
-                question, profile=profile,
+                question, profile=profile, answer_format=answer_format,
                 generator=counting, search=frozen_search,
             )
             runs[profile] = {**result.to_dict(),
@@ -192,13 +233,44 @@ def run_comparison(questions=QUESTIONS, *, generator=None,
 
     first = next((row["runs"][BASELINE] for row in rows
                   if row["runs"][BASELINE]["generator_called"]), None)
+    quote = answer_format == QUOTE
+    if quote:
+        format_notes = [
+            "Quote format: the model selects one found source and returns "
+            "JSON with its full text. A quote is accepted only after it "
+            "matches the whole section (only spaces are normalized).",
+            "The metrics count valid JSON, an allowed source and an exact "
+            "full quote. The three-sentence limit does not apply to a full "
+            "quote. An exact quote confirms the text of a source, not that "
+            "the source fits the question or that the knowledge is right.",
+            "Only the sources found for the current question are allowed, "
+            "never the sources of the few-shot examples.",
+        ]
+    else:
+        format_notes = [
+            "The metrics count form (words, sentences, citations). They do "
+            "not measure factual accuracy. The sentence count is a "
+            "heuristic.",
+            "Citations are only allowed from the sources found for the "
+            "current question, never from the few-shot examples.",
+        ]
+    examples = [
+        {
+            "question": example["question"],
+            "source_ids": list(example["source_ids"]),
+            "answer": (quote_example_answer(example) if quote
+                       else example["answer"]),
+        }
+        for example in FEW_SHOT_EXAMPLES
+    ]
     return {
         "suite": suite,
+        "answer_format": answer_format,
         "description": (
             f"Baseline vs specialized (few-shot) coach prompts on "
-            f"{len(questions)} fixed questions: one search per question, "
-            f"the same sources for both profiles, one shared generator, one "
-            f"greedy generation per profile."
+            f"{len(questions)} fixed questions ({answer_format} format): one "
+            f"search per question, the same sources for both profiles, one "
+            f"shared generator, one greedy generation per profile."
         ),
         "notes": [
             SUITE_NOTES.get(suite, "Custom question list."),
@@ -208,29 +280,24 @@ def run_comparison(questions=QUESTIONS, *, generator=None,
             "difference is the three few-shot examples.",
             "The few-shot examples use their own questions, which are not "
             "among the evaluation questions.",
-            "The metrics count form (words, sentences, citations). They do "
-            "not measure factual accuracy. The sentence count is a "
-            "heuristic.",
-            "Citations are only allowed from the sources found for the "
-            "current question, never from the few-shot examples.",
+            *format_notes,
         ],
         "generation_settings": first["generation"] if first else None,
         "environment": counting.environment(),
-        "system_prompt": coach.SYSTEM_PROMPT,
+        "system_prompt": QUOTE_SYSTEM_PROMPT if quote else coach.SYSTEM_PROMPT,
         "profiles": {
             BASELINE: {"few_shot_examples": 0},
             SPECIALIZED: {
                 "few_shot_examples": len(FEW_SHOT_EXAMPLES),
-                "examples": [dict(example, source_ids=list(
-                    example["source_ids"])) for example in FEW_SHOT_EXAMPLES],
-                "example_messages": example_messages(),
+                "examples": examples,
+                "example_messages": example_messages(answer_format),
             },
         },
         "questions": list(questions),
         "search_calls": search_calls,
         "generations": counting.calls,
         "results": rows,
-        "summary": {profile: summarize(rows, profile)
+        "summary": {profile: summarize(rows, profile, answer_format)
                     for profile in PROFILES},
     }
 
@@ -245,11 +312,19 @@ def print_report(report: dict) -> None:
             m = run["metrics"]
             print(f"    {profile}: {run['status']}")
             print(f"      answer: {run['answer']}")
-            print(
-                f"      words {m['words_without_citations']}, sentences "
-                f"(heuristic) {m['sentences_heuristic']}, citations "
-                f"{run['citations']}, unknown {m['unknown_citations']}"
-            )
+            if report["answer_format"] == QUOTE:
+                print(
+                    f"      valid JSON {m['valid_json']}, source "
+                    f"{m['selected_source_id']}, allowed "
+                    f"{m['allowed_source']}, exact full quote "
+                    f"{m['exact_full_quote']}"
+                )
+            else:
+                print(
+                    f"      words {m['words_without_citations']}, sentences "
+                    f"(heuristic) {m['sentences_heuristic']}, citations "
+                    f"{run['citations']}, unknown {m['unknown_citations']}"
+                )
         print()
 
     header = (f"{'metric':38s}" + "".join(f"{profile:>13s}"
@@ -262,8 +337,12 @@ def print_report(report: dict) -> None:
         print(f"{key:38s}{values}")
     print(f"\nsearch calls: {report['search_calls']}, "
           f"generations: {report['generations']}")
-    print("Metrics count form, not factual accuracy; the sentence count is "
-          "a heuristic.")
+    if report["answer_format"] == QUOTE:
+        print("An exact quote confirms the source text, not that the source "
+              "fits the question.")
+    else:
+        print("Metrics count form, not factual accuracy; the sentence count "
+              "is a heuristic.")
 
 
 def main(argv=None) -> int:
@@ -276,11 +355,18 @@ def main(argv=None) -> int:
         default=DEFAULT_SUITE,
         help="question set (default: specialization)",
     )
+    parser.add_argument(
+        "--answer-format",
+        choices=ANSWER_FORMATS,
+        default=DEFAULT_ANSWER_FORMAT,
+        help="text (default) or quote (exact source quotation)",
+    )
     parser.add_argument("--output", help="save the JSON report here")
     args = parser.parse_args(argv)
 
     try:
-        report = run_comparison(SUITES[args.suite], suite=args.suite)
+        report = run_comparison(SUITES[args.suite], suite=args.suite,
+                                answer_format=args.answer_format)
     except coach_model.CoachSetupError as error:
         print(error, file=sys.stderr)
         return 2

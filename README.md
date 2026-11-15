@@ -169,7 +169,7 @@ When a round is rejected:
 | `coach_model.py` | Local model: download the pinned Qwen3-0.6B, `LocalGenerator` for CPU generation, `smoke` check |
 | `coach_retrieval.py` | BM25 search over `knowledge/*.md` |
 | `coach.py` | Strategy Coach CLI prototype: search → local model → answer with source IDs |
-| `coach_prompts.py` | Prompt profiles: `baseline` and `specialized` (three few-shot examples) |
+| `coach_prompts.py` | Prompt profiles `baseline` and `specialized` (three few-shot examples), text and quote prompts |
 | `evaluate_coach.py` | Compares both prompt profiles on six fixed questions |
 | `knowledge/*.md` | The game's own knowledge files, 22 sections with stable IDs |
 
@@ -268,12 +268,13 @@ flowchart TD
 
     subgraph coach_tool["RAG Coach CLI prototype (coach.py), not in the app"]
         coach_cli["coach.py --question<br/>ask_coach(), --profile"]
-        prompts["coach_prompts.py<br/>baseline (default) or<br/>specialized = + 3 few-shot examples"]
+        prompts["coach_prompts.py<br/>text or quote prompt;<br/>baseline (default) or<br/>specialized = + 3 few-shot examples"]
         abstain["abstained: no section found<br/>program rule, model not called"]
         citation_check["citation check: at least one<br/>[source_id], all IDs from the<br/>sources of this question (IDs only)"]
+        quote_check["quote check before acceptance:<br/>valid JSON, exactly 2 keys,<br/>source found for this question,<br/>full section text (only spaces<br/>normalized); confirms the text,<br/>not its relevance"]
         coach_out["answer, sources, status<br/>+ optional JSON report"]
         eval_coach["evaluate_coach.py --suite<br/>fixed questions x 2 profiles"]
-        spec_report[("artifacts/coach_specialization.json<br/>coach_fraction_regression.json")]
+        spec_report[("artifacts/coach_specialization.json<br/>coach_fraction_regression.json<br/>coach_quote_regression.json")]
     end
 
     coach_cli -->|"1. search, top 3"| bm25
@@ -283,8 +284,10 @@ flowchart TD
     prompts -->|"example sections by ID"| bm25
     coach_cli -->|"2. messages: question + found sections<br/>(--no-retrieval: question only)"| generator
     generator -->|"raw answer"| coach_cli
-    coach_cli -->|"with retrieval"| citation_check
+    coach_cli -->|"text format<br/>with retrieval"| citation_check
     citation_check -->|"answered or<br/>validation_failed"| coach_out
+    coach_cli -->|"quote format:<br/>raw JSON answer"| quote_check
+    quote_check -->|"accepted_quote set only if all pass:<br/>answered; else validation_failed;<br/>null / null: abstained"| coach_out
     coach_cli -->|"--no-retrieval:<br/>answer without retrieval"| coach_out
     abstain --> coach_out
     eval_coach -->|"one search per question"| bm25
@@ -502,6 +505,21 @@ match analysis yet. The prompt has two profiles: `baseline` (default) and
   The fix improved the search, not the answers, and nothing here is credited
   to the few-shot profile; see the
   [model card](model_card.md#fractional-input-retrieval-fix).
+- **Exact-quote format** (`--answer-format quote`, only with retrieval):
+  the model selects one found source and returns JSON with that section's
+  full text. The coach accepts the quote only if the JSON has exactly
+  `source_id` and `quote`, the source was found for this question, and the
+  quote is the whole section (only spaces normalized). Otherwise the status
+  is `validation_failed`; `null` / `null` means `abstained`. The raw answer
+  is kept, and a wrong quote is never replaced. On the three
+  fractional-input questions (6 real generations,
+  [artifacts/coach_quote_regression.json](artifacts/coach_quote_regression.json)),
+  baseline gave 1 exact quote out of 3 and specialized 3 out of 3; every
+  accepted quote was the full `rules-valid-guesses` section. This is a
+  small development set for a new contract; the earlier text comparisons
+  stay as historical results. An exact match confirms the text of a source,
+  not that the source answers the question or that the knowledge files are
+  right; see the [model card](model_card.md#exact-quote-answer-format).
 
 **Local model (`coach_model.py`)**
 
@@ -563,6 +581,12 @@ python evaluate_coach.py --output artifacts/coach_specialization.json
 
 # Regression set for fractional input (3 questions, 6 generations)
 python evaluate_coach.py --suite fraction-regression --output artifacts/coach_fraction_regression.json
+
+# Ask for an exact, checked quotation of one found source
+python coach.py --question "Can I submit a fractional guess, and does it use a round?" --answer-format quote
+
+# The same regression set in the quote format (6 generations)
+python evaluate_coach.py --suite fraction-regression --answer-format quote --output artifacts/coach_quote_regression.json
 ```
 
 The coach tools were checked only on macOS 26.6.1 (arm64) with Python
@@ -611,7 +635,7 @@ Linux are not verified yet.
 
 Last confirmed results, on Python 3.13.15 with Streamlit 1.60.0:
 
-- **171 automated tests passed** (`python -m pytest -q`);
+- **188 automated tests passed** (`python -m pytest -q`);
 - **6 of 6 evaluation scenarios passed** (`python evaluate.py`).
 
 These are two different measures, and neither is a guarantee that the app
@@ -637,8 +661,11 @@ What the tests cover:
   `--no-retrieval` mode skips the search), and the prompt profiles
   (baseline is the default, specialized only adds the examples, both get
   the same current sources, a citation copied from an example is
-  rejected). These tests replace the model with a fake and never load the
-  real one.
+  rejected), and the quote format (a full quote and whitespace changes are
+  accepted; a removed negation, a shortened section, a changed number, an
+  unknown or example source and broken JSON are rejected; `null` / `null`
+  abstains; the text format is unchanged). These tests replace the model
+  with a fake and never load the real one.
 
 Limits of this testing:
 
@@ -682,6 +709,10 @@ Limits of this testing:
   shows that the model runs locally and gives a short English answer.
 - **The citation check covers IDs only.** A cited ID must be one of the
   found sections, but the check cannot tell whether a sentence is true.
+- **An exact quote is not proof of relevance.** The quote check confirms
+  that the text is a found section, word for word. It cannot tell whether
+  that section answers the question or whether the knowledge files are
+  right, and it rejects a quote that keeps the meaning but changes a word.
 - **The knowledge search matches words, not meaning.**
 
 ## Project structure

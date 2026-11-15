@@ -1,0 +1,1052 @@
+{
+  "suite": "fraction-regression",
+  "answer_format": "quote",
+  "description": "Baseline vs specialized (few-shot) coach prompts on 3 fixed questions (quote format): one search per question, the same sources for both profiles, one shared generator, one greedy generation per profile.",
+  "notes": [
+    "Development / regression set, written after the error analysis of the fractional-guess answer. It is not an independent evaluation.",
+    "Prompt specialization only: no model weights were trained.",
+    "Both profiles use the same model, system instructions, retrieval, generation settings and token limit. The only difference is the three few-shot examples.",
+    "The few-shot examples use their own questions, which are not among the evaluation questions.",
+    "Quote format: the model selects one found source and returns JSON with its full text. A quote is accepted only after it matches the whole section (only spaces are normalized).",
+    "The metrics count valid JSON, an allowed source and an exact full quote. The three-sentence limit does not apply to a full quote. An exact quote confirms the text of a source, not that the source fits the question or that the knowledge is right.",
+    "Only the sources found for the current question are allowed, never the sources of the few-shot examples."
+  ],
+  "generation_settings": {
+    "model": "Qwen/Qwen3-0.6B",
+    "revision": "c1899de289a04d12100db370d81485cdf75e47ca",
+    "device": "cpu",
+    "dtype": "float32",
+    "local_files_only": true,
+    "inference_mode": true,
+    "enable_thinking": false,
+    "do_sample": false,
+    "max_new_tokens": 192,
+    "prompt_tokens": 363,
+    "generated_tokens": 67,
+    "thinking_off": true,
+    "seconds": {
+      "load": 4.08,
+      "generate": 5.95
+    }
+  },
+  "environment": {
+    "python": "3.13.15",
+    "platform": "macOS-26.6.1-arm64-arm-64bit-Mach-O",
+    "machine": "arm64",
+    "torch": "2.15.0",
+    "transformers": "5.23.0",
+    "huggingface_hub": "2.4.0",
+    "tokenizers": "0.23.3",
+    "safetensors": "0.8.0",
+    "device": "cpu",
+    "torch_threads": 4,
+    "HF_HUB_OFFLINE": "1"
+  },
+  "system_prompt": "You are the Number Duel evidence assistant. Select exactly one source that directly answers the current question. Return ONLY a JSON object with exactly two keys: \"source_id\" and \"quote\". The quote must copy the ENTIRE text of the selected source, without its heading. Preserve every word, restriction, negation, number and punctuation mark. You may replace line breaks with spaces. Do not paraphrase, explain, invent rules or add any other text. If no supplied source answers the question, return {\"source_id\": null, \"quote\": null}.",
+  "profiles": {
+    "baseline": {
+      "few_shot_examples": 0
+    },
+    "specialized": {
+      "few_shot_examples": 3,
+      "examples": [
+        {
+          "question": "What do I need to do before a duel starts?",
+          "source_ids": [
+            "rules-starting-a-duel"
+          ],
+          "answer": "{\"source_id\": \"rules-starting-a-duel\", \"quote\": \"Before the duel you choose a difficulty and enter your secret number. Vector's secret number is drawn at random only when you press Start Duel. During the duel the difficulty and both secret numbers do not change. Vector's secret number is shown only after the duel ends.\"}"
+        },
+        {
+          "question": "Can I use New Duel in the middle of a duel?",
+          "source_ids": [
+            "rules-new-duel"
+          ],
+          "answer": "{\"source_id\": \"rules-new-duel\", \"quote\": \"The New Duel button is available during a duel and after it ends. It clears the current duel and its history and goes back to the setup. The chosen difficulty is kept. New Duel does not change the Solo game.\"}"
+        },
+        {
+          "question": "Do the game logs show my secret number?",
+          "source_ids": [
+            "reliability-logs"
+          ],
+          "answer": "{\"source_id\": \"reliability-logs\", \"quote\": \"The safe service writes a log line for every round. An accepted round is logged as duel_round_accepted with the round number and the new status. A rejected round is logged as duel_round_rejected with the round number and the stage, engine or guardrail. The logs never contain secret numbers or full game states.\"}"
+        }
+      ],
+      "example_messages": [
+        {
+          "role": "user",
+          "content": "Sources:\n\n[rules-starting-a-duel] Starting a duel\nBefore the duel you choose a difficulty and enter your secret number.\nVector's secret number is drawn at random only when you press Start Duel.\nDuring the duel the difficulty and both secret numbers do not change.\nVector's secret number is shown only after the duel ends.\n\nQuestion: What do I need to do before a duel starts?"
+        },
+        {
+          "role": "assistant",
+          "content": "{\"source_id\": \"rules-starting-a-duel\", \"quote\": \"Before the duel you choose a difficulty and enter your secret number. Vector's secret number is drawn at random only when you press Start Duel. During the duel the difficulty and both secret numbers do not change. Vector's secret number is shown only after the duel ends.\"}"
+        },
+        {
+          "role": "user",
+          "content": "Sources:\n\n[rules-new-duel] Starting over with New Duel\nThe New Duel button is available during a duel and after it ends. It\nclears the current duel and its history and goes back to the setup. The\nchosen difficulty is kept. New Duel does not change the Solo game.\n\nQuestion: Can I use New Duel in the middle of a duel?"
+        },
+        {
+          "role": "assistant",
+          "content": "{\"source_id\": \"rules-new-duel\", \"quote\": \"The New Duel button is available during a duel and after it ends. It clears the current duel and its history and goes back to the setup. The chosen difficulty is kept. New Duel does not change the Solo game.\"}"
+        },
+        {
+          "role": "user",
+          "content": "Sources:\n\n[reliability-logs] Logs without secrets\nThe safe service writes a log line for every round. An accepted round is\nlogged as duel_round_accepted with the round number and the new status. A\nrejected round is logged as duel_round_rejected with the round number and\nthe stage, engine or guardrail. The logs never contain secret numbers or\nfull game states.\n\nQuestion: Do the game logs show my secret number?"
+        },
+        {
+          "role": "assistant",
+          "content": "{\"source_id\": \"reliability-logs\", \"quote\": \"The safe service writes a log line for every round. An accepted round is logged as duel_round_accepted with the round number and the new status. A rejected round is logged as duel_round_rejected with the round number and the stage, engine or guardrail. The logs never contain secret numbers or full game states.\"}"
+        }
+      ]
+    }
+  },
+  "questions": [
+    "Can I submit a fractional guess, and does it use a round?",
+    "Are decimal guesses allowed, and will they consume a round?",
+    "What happens if I enter 4.5 as my guess?"
+  ],
+  "search_calls": 3,
+  "generations": 6,
+  "results": [
+    {
+      "question": "Can I submit a fractional guess, and does it use a round?",
+      "sources": [
+        {
+          "source_id": "rules-valid-guesses",
+          "path": "knowledge/rules.md",
+          "title": "Valid guesses",
+          "score": 5.938,
+          "text": "A guess must be a whole number inside the range of the difficulty. An\nempty guess, text, a fraction such as 4.5, or a number outside the range\nis rejected with a message. A rejected guess does not use up a round."
+        },
+        {
+          "source_id": "rules-difficulty-limits",
+          "path": "knowledge/rules.md",
+          "title": "Difficulty ranges and round limits",
+          "score": 3.554,
+          "text": "The difficulty sets the range of possible numbers and the round limit.\nEasy uses the numbers 1 to 20 and allows 6 rounds. Normal uses the numbers\n1 to 100 and allows 8 rounds. Hard uses the numbers 1 to 50 and allows only\n5 rounds. Both secret numbers and every guess must be inside the range."
+        },
+        {
+          "source_id": "rules-paired-rounds",
+          "path": "knowledge/rules.md",
+          "title": "Paired rounds",
+          "score": 3.042,
+          "text": "Every round has two moves, and both players always get their move. First\nyou guess Vector's secret number, then Vector guesses your secret number.\nVector still makes its move in a round where you already guessed right.\nOne round uses one attempt from the round limit."
+        }
+      ],
+      "same_sources_for_both_profiles": true,
+      "same_current_turn_for_both_profiles": true,
+      "runs": {
+        "baseline": {
+          "question": "Can I submit a fractional guess, and does it use a round?",
+          "mode": "rag",
+          "profile": "baseline",
+          "answer_format": "quote",
+          "status": "validation_failed",
+          "answer": "{\"source_id\": \"rules-valid-guesses\", \"quote\": \"A guess must be a whole number inside the range of the difficulty. An empty guess, text, a fraction such as 4.5, or a number outside the range is rejected with a message. A rejected guess does not use a round.\"}",
+          "sources": [
+            {
+              "source_id": "rules-valid-guesses",
+              "path": "knowledge/rules.md",
+              "title": "Valid guesses",
+              "score": 5.938,
+              "text": "A guess must be a whole number inside the range of the difficulty. An\nempty guess, text, a fraction such as 4.5, or a number outside the range\nis rejected with a message. A rejected guess does not use up a round."
+            },
+            {
+              "source_id": "rules-difficulty-limits",
+              "path": "knowledge/rules.md",
+              "title": "Difficulty ranges and round limits",
+              "score": 3.554,
+              "text": "The difficulty sets the range of possible numbers and the round limit.\nEasy uses the numbers 1 to 20 and allows 6 rounds. Normal uses the numbers\n1 to 100 and allows 8 rounds. Hard uses the numbers 1 to 50 and allows only\n5 rounds. Both secret numbers and every guess must be inside the range."
+            },
+            {
+              "source_id": "rules-paired-rounds",
+              "path": "knowledge/rules.md",
+              "title": "Paired rounds",
+              "score": 3.042,
+              "text": "Every round has two moves, and both players always get their move. First\nyou guess Vector's secret number, then Vector guesses your secret number.\nVector still makes its move in a round where you already guessed right.\nOne round uses one attempt from the round limit."
+            }
+          ],
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are the Number Duel evidence assistant. Select exactly one source that directly answers the current question. Return ONLY a JSON object with exactly two keys: \"source_id\" and \"quote\". The quote must copy the ENTIRE text of the selected source, without its heading. Preserve every word, restriction, negation, number and punctuation mark. You may replace line breaks with spaces. Do not paraphrase, explain, invent rules or add any other text. If no supplied source answers the question, return {\"source_id\": null, \"quote\": null}."
+            },
+            {
+              "role": "user",
+              "content": "Sources:\n\n[rules-valid-guesses] Valid guesses\nA guess must be a whole number inside the range of the difficulty. An\nempty guess, text, a fraction such as 4.5, or a number outside the range\nis rejected with a message. A rejected guess does not use up a round.\n\n[rules-difficulty-limits] Difficulty ranges and round limits\nThe difficulty sets the range of possible numbers and the round limit.\nEasy uses the numbers 1 to 20 and allows 6 rounds. Normal uses the numbers\n1 to 100 and allows 8 rounds. Hard uses the numbers 1 to 50 and allows only\n5 rounds. Both secret numbers and every guess must be inside the range.\n\n[rules-paired-rounds] Paired rounds\nEvery round has two moves, and both players always get their move. First\nyou guess Vector's secret number, then Vector guesses your secret number.\nVector still makes its move in a round where you already guessed right.\nOne round uses one attempt from the round limit.\n\nQuestion: Can I submit a fractional guess, and does it use a round?"
+            }
+          ],
+          "citations": [
+            "rules-valid-guesses"
+          ],
+          "accepted_quote": null,
+          "checks": [
+            {
+              "check": "answer is not empty",
+              "passed": true
+            },
+            {
+              "check": "no thinking block in the answer",
+              "passed": true
+            },
+            {
+              "check": "answer is valid JSON",
+              "passed": true,
+              "key": "valid_json"
+            },
+            {
+              "check": "JSON has exactly the keys \"source_id\" and \"quote\"",
+              "passed": true,
+              "key": "two_keys"
+            },
+            {
+              "check": "source_id and quote are strings",
+              "passed": true,
+              "key": "types"
+            },
+            {
+              "check": "source_id is one of the sources found for this question",
+              "passed": true,
+              "key": "allowed_source",
+              "source_id": "rules-valid-guesses"
+            },
+            {
+              "check": "quote is the full text of that source (only spaces normalized)",
+              "passed": false,
+              "key": "exact_full_quote",
+              "quote_words": 41,
+              "source_words": 42
+            }
+          ],
+          "generator_called": true,
+          "generation": {
+            "model": "Qwen/Qwen3-0.6B",
+            "revision": "c1899de289a04d12100db370d81485cdf75e47ca",
+            "device": "cpu",
+            "dtype": "float32",
+            "local_files_only": true,
+            "inference_mode": true,
+            "enable_thinking": false,
+            "do_sample": false,
+            "max_new_tokens": 192,
+            "prompt_tokens": 363,
+            "generated_tokens": 67,
+            "thinking_off": true,
+            "seconds": {
+              "load": 4.08,
+              "generate": 5.95
+            }
+          },
+          "environment": {
+            "python": "3.13.15",
+            "platform": "macOS-26.6.1-arm64-arm-64bit-Mach-O",
+            "machine": "arm64",
+            "torch": "2.15.0",
+            "transformers": "5.23.0",
+            "huggingface_hub": "2.4.0",
+            "tokenizers": "0.23.3",
+            "safetensors": "0.8.0",
+            "device": "cpu",
+            "torch_threads": 4,
+            "HF_HUB_OFFLINE": "1"
+          },
+          "note": "Quote format: a quote is accepted only after it matches the full text of a source found for this question (only spaces are normalized). A match confirms the text of the source, not that the source fits the question or that the knowledge files are right.",
+          "metrics": {
+            "valid_json": true,
+            "selected_source_id": "rules-valid-guesses",
+            "allowed_source": true,
+            "exact_full_quote": false,
+            "status": "validation_failed",
+            "generated_tokens": 67
+          }
+        },
+        "specialized": {
+          "question": "Can I submit a fractional guess, and does it use a round?",
+          "mode": "rag",
+          "profile": "specialized",
+          "answer_format": "quote",
+          "status": "answered",
+          "answer": "{\"source_id\": \"rules-valid-guesses\", \"quote\": \"A guess must be a whole number inside the range of the difficulty. An empty guess, text, a fraction such as 4.5, or a number outside the range is rejected with a message. A rejected guess does not use up a round.\"}",
+          "sources": [
+            {
+              "source_id": "rules-valid-guesses",
+              "path": "knowledge/rules.md",
+              "title": "Valid guesses",
+              "score": 5.938,
+              "text": "A guess must be a whole number inside the range of the difficulty. An\nempty guess, text, a fraction such as 4.5, or a number outside the range\nis rejected with a message. A rejected guess does not use up a round."
+            },
+            {
+              "source_id": "rules-difficulty-limits",
+              "path": "knowledge/rules.md",
+              "title": "Difficulty ranges and round limits",
+              "score": 3.554,
+              "text": "The difficulty sets the range of possible numbers and the round limit.\nEasy uses the numbers 1 to 20 and allows 6 rounds. Normal uses the numbers\n1 to 100 and allows 8 rounds. Hard uses the numbers 1 to 50 and allows only\n5 rounds. Both secret numbers and every guess must be inside the range."
+            },
+            {
+              "source_id": "rules-paired-rounds",
+              "path": "knowledge/rules.md",
+              "title": "Paired rounds",
+              "score": 3.042,
+              "text": "Every round has two moves, and both players always get their move. First\nyou guess Vector's secret number, then Vector guesses your secret number.\nVector still makes its move in a round where you already guessed right.\nOne round uses one attempt from the round limit."
+            }
+          ],
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are the Number Duel evidence assistant. Select exactly one source that directly answers the current question. Return ONLY a JSON object with exactly two keys: \"source_id\" and \"quote\". The quote must copy the ENTIRE text of the selected source, without its heading. Preserve every word, restriction, negation, number and punctuation mark. You may replace line breaks with spaces. Do not paraphrase, explain, invent rules or add any other text. If no supplied source answers the question, return {\"source_id\": null, \"quote\": null}."
+            },
+            {
+              "role": "user",
+              "content": "Sources:\n\n[rules-starting-a-duel] Starting a duel\nBefore the duel you choose a difficulty and enter your secret number.\nVector's secret number is drawn at random only when you press Start Duel.\nDuring the duel the difficulty and both secret numbers do not change.\nVector's secret number is shown only after the duel ends.\n\nQuestion: What do I need to do before a duel starts?"
+            },
+            {
+              "role": "assistant",
+              "content": "{\"source_id\": \"rules-starting-a-duel\", \"quote\": \"Before the duel you choose a difficulty and enter your secret number. Vector's secret number is drawn at random only when you press Start Duel. During the duel the difficulty and both secret numbers do not change. Vector's secret number is shown only after the duel ends.\"}"
+            },
+            {
+              "role": "user",
+              "content": "Sources:\n\n[rules-new-duel] Starting over with New Duel\nThe New Duel button is available during a duel and after it ends. It\nclears the current duel and its history and goes back to the setup. The\nchosen difficulty is kept. New Duel does not change the Solo game.\n\nQuestion: Can I use New Duel in the middle of a duel?"
+            },
+            {
+              "role": "assistant",
+              "content": "{\"source_id\": \"rules-new-duel\", \"quote\": \"The New Duel button is available during a duel and after it ends. It clears the current duel and its history and goes back to the setup. The chosen difficulty is kept. New Duel does not change the Solo game.\"}"
+            },
+            {
+              "role": "user",
+              "content": "Sources:\n\n[reliability-logs] Logs without secrets\nThe safe service writes a log line for every round. An accepted round is\nlogged as duel_round_accepted with the round number and the new status. A\nrejected round is logged as duel_round_rejected with the round number and\nthe stage, engine or guardrail. The logs never contain secret numbers or\nfull game states.\n\nQuestion: Do the game logs show my secret number?"
+            },
+            {
+              "role": "assistant",
+              "content": "{\"source_id\": \"reliability-logs\", \"quote\": \"The safe service writes a log line for every round. An accepted round is logged as duel_round_accepted with the round number and the new status. A rejected round is logged as duel_round_rejected with the round number and the stage, engine or guardrail. The logs never contain secret numbers or full game states.\"}"
+            },
+            {
+              "role": "user",
+              "content": "Sources:\n\n[rules-valid-guesses] Valid guesses\nA guess must be a whole number inside the range of the difficulty. An\nempty guess, text, a fraction such as 4.5, or a number outside the range\nis rejected with a message. A rejected guess does not use up a round.\n\n[rules-difficulty-limits] Difficulty ranges and round limits\nThe difficulty sets the range of possible numbers and the round limit.\nEasy uses the numbers 1 to 20 and allows 6 rounds. Normal uses the numbers\n1 to 100 and allows 8 rounds. Hard uses the numbers 1 to 50 and allows only\n5 rounds. Both secret numbers and every guess must be inside the range.\n\n[rules-paired-rounds] Paired rounds\nEvery round has two moves, and both players always get their move. First\nyou guess Vector's secret number, then Vector guesses your secret number.\nVector still makes its move in a round where you already guessed right.\nOne round uses one attempt from the round limit.\n\nQuestion: Can I submit a fractional guess, and does it use a round?"
+            }
+          ],
+          "citations": [
+            "rules-valid-guesses"
+          ],
+          "accepted_quote": {
+            "source_id": "rules-valid-guesses",
+            "quote": "A guess must be a whole number inside the range of the difficulty. An empty guess, text, a fraction such as 4.5, or a number outside the range is rejected with a message. A rejected guess does not use up a round."
+          },
+          "checks": [
+            {
+              "check": "answer is not empty",
+              "passed": true
+            },
+            {
+              "check": "no thinking block in the answer",
+              "passed": true
+            },
+            {
+              "check": "answer is valid JSON",
+              "passed": true,
+              "key": "valid_json"
+            },
+            {
+              "check": "JSON has exactly the keys \"source_id\" and \"quote\"",
+              "passed": true,
+              "key": "two_keys"
+            },
+            {
+              "check": "source_id and quote are strings",
+              "passed": true,
+              "key": "types"
+            },
+            {
+              "check": "source_id is one of the sources found for this question",
+              "passed": true,
+              "key": "allowed_source",
+              "source_id": "rules-valid-guesses"
+            },
+            {
+              "check": "quote is the full text of that source (only spaces normalized)",
+              "passed": true,
+              "key": "exact_full_quote",
+              "quote_words": 42,
+              "source_words": 42
+            }
+          ],
+          "generator_called": true,
+          "generation": {
+            "model": "Qwen/Qwen3-0.6B",
+            "revision": "c1899de289a04d12100db370d81485cdf75e47ca",
+            "device": "cpu",
+            "dtype": "float32",
+            "local_files_only": true,
+            "inference_mode": true,
+            "enable_thinking": false,
+            "do_sample": false,
+            "max_new_tokens": 192,
+            "prompt_tokens": 847,
+            "generated_tokens": 68,
+            "thinking_off": true,
+            "seconds": {
+              "load": 0.0,
+              "generate": 7.37
+            }
+          },
+          "environment": {
+            "python": "3.13.15",
+            "platform": "macOS-26.6.1-arm64-arm-64bit-Mach-O",
+            "machine": "arm64",
+            "torch": "2.15.0",
+            "transformers": "5.23.0",
+            "huggingface_hub": "2.4.0",
+            "tokenizers": "0.23.3",
+            "safetensors": "0.8.0",
+            "device": "cpu",
+            "torch_threads": 4,
+            "HF_HUB_OFFLINE": "1"
+          },
+          "note": "Quote format: a quote is accepted only after it matches the full text of a source found for this question (only spaces are normalized). A match confirms the text of the source, not that the source fits the question or that the knowledge files are right.",
+          "metrics": {
+            "valid_json": true,
+            "selected_source_id": "rules-valid-guesses",
+            "allowed_source": true,
+            "exact_full_quote": true,
+            "status": "answered",
+            "generated_tokens": 68
+          }
+        }
+      }
+    },
+    {
+      "question": "Are decimal guesses allowed, and will they consume a round?",
+      "sources": [
+        {
+          "source_id": "rules-difficulty-limits",
+          "path": "knowledge/rules.md",
+          "title": "Difficulty ranges and round limits",
+          "score": 5.609,
+          "text": "The difficulty sets the range of possible numbers and the round limit.\nEasy uses the numbers 1 to 20 and allows 6 rounds. Normal uses the numbers\n1 to 100 and allows 8 rounds. Hard uses the numbers 1 to 50 and allows only\n5 rounds. Both secret numbers and every guess must be inside the range."
+        },
+        {
+          "source_id": "rules-valid-guesses",
+          "path": "knowledge/rules.md",
+          "title": "Valid guesses",
+          "score": 4.322,
+          "text": "A guess must be a whole number inside the range of the difficulty. An\nempty guess, text, a fraction such as 4.5, or a number outside the range\nis rejected with a message. A rejected guess does not use up a round."
+        },
+        {
+          "source_id": "rules-paired-rounds",
+          "path": "knowledge/rules.md",
+          "title": "Paired rounds",
+          "score": 1.589,
+          "text": "Every round has two moves, and both players always get their move. First\nyou guess Vector's secret number, then Vector guesses your secret number.\nVector still makes its move in a round where you already guessed right.\nOne round uses one attempt from the round limit."
+        }
+      ],
+      "same_sources_for_both_profiles": true,
+      "same_current_turn_for_both_profiles": true,
+      "runs": {
+        "baseline": {
+          "question": "Are decimal guesses allowed, and will they consume a round?",
+          "mode": "rag",
+          "profile": "baseline",
+          "answer_format": "quote",
+          "status": "validation_failed",
+          "answer": "{\"source_id\": \"rules-difficulty-limits\", \"quote\": \"Both secret numbers and every guess must be inside the range.\"}",
+          "sources": [
+            {
+              "source_id": "rules-difficulty-limits",
+              "path": "knowledge/rules.md",
+              "title": "Difficulty ranges and round limits",
+              "score": 5.609,
+              "text": "The difficulty sets the range of possible numbers and the round limit.\nEasy uses the numbers 1 to 20 and allows 6 rounds. Normal uses the numbers\n1 to 100 and allows 8 rounds. Hard uses the numbers 1 to 50 and allows only\n5 rounds. Both secret numbers and every guess must be inside the range."
+            },
+            {
+              "source_id": "rules-valid-guesses",
+              "path": "knowledge/rules.md",
+              "title": "Valid guesses",
+              "score": 4.322,
+              "text": "A guess must be a whole number inside the range of the difficulty. An\nempty guess, text, a fraction such as 4.5, or a number outside the range\nis rejected with a message. A rejected guess does not use up a round."
+            },
+            {
+              "source_id": "rules-paired-rounds",
+              "path": "knowledge/rules.md",
+              "title": "Paired rounds",
+              "score": 1.589,
+              "text": "Every round has two moves, and both players always get their move. First\nyou guess Vector's secret number, then Vector guesses your secret number.\nVector still makes its move in a round where you already guessed right.\nOne round uses one attempt from the round limit."
+            }
+          ],
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are the Number Duel evidence assistant. Select exactly one source that directly answers the current question. Return ONLY a JSON object with exactly two keys: \"source_id\" and \"quote\". The quote must copy the ENTIRE text of the selected source, without its heading. Preserve every word, restriction, negation, number and punctuation mark. You may replace line breaks with spaces. Do not paraphrase, explain, invent rules or add any other text. If no supplied source answers the question, return {\"source_id\": null, \"quote\": null}."
+            },
+            {
+              "role": "user",
+              "content": "Sources:\n\n[rules-difficulty-limits] Difficulty ranges and round limits\nThe difficulty sets the range of possible numbers and the round limit.\nEasy uses the numbers 1 to 20 and allows 6 rounds. Normal uses the numbers\n1 to 100 and allows 8 rounds. Hard uses the numbers 1 to 50 and allows only\n5 rounds. Both secret numbers and every guess must be inside the range.\n\n[rules-valid-guesses] Valid guesses\nA guess must be a whole number inside the range of the difficulty. An\nempty guess, text, a fraction such as 4.5, or a number outside the range\nis rejected with a message. A rejected guess does not use up a round.\n\n[rules-paired-rounds] Paired rounds\nEvery round has two moves, and both players always get their move. First\nyou guess Vector's secret number, then Vector guesses your secret number.\nVector still makes its move in a round where you already guessed right.\nOne round uses one attempt from the round limit.\n\nQuestion: Are decimal guesses allowed, and will they consume a round?"
+            }
+          ],
+          "citations": [
+            "rules-difficulty-limits"
+          ],
+          "accepted_quote": null,
+          "checks": [
+            {
+              "check": "answer is not empty",
+              "passed": true
+            },
+            {
+              "check": "no thinking block in the answer",
+              "passed": true
+            },
+            {
+              "check": "answer is valid JSON",
+              "passed": true,
+              "key": "valid_json"
+            },
+            {
+              "check": "JSON has exactly the keys \"source_id\" and \"quote\"",
+              "passed": true,
+              "key": "two_keys"
+            },
+            {
+              "check": "source_id and quote are strings",
+              "passed": true,
+              "key": "types"
+            },
+            {
+              "check": "source_id is one of the sources found for this question",
+              "passed": true,
+              "key": "allowed_source",
+              "source_id": "rules-difficulty-limits"
+            },
+            {
+              "check": "quote is the full text of that source (only spaces normalized)",
+              "passed": false,
+              "key": "exact_full_quote",
+              "quote_words": 11,
+              "source_words": 57
+            }
+          ],
+          "generator_called": true,
+          "generation": {
+            "model": "Qwen/Qwen3-0.6B",
+            "revision": "c1899de289a04d12100db370d81485cdf75e47ca",
+            "device": "cpu",
+            "dtype": "float32",
+            "local_files_only": true,
+            "inference_mode": true,
+            "enable_thinking": false,
+            "do_sample": false,
+            "max_new_tokens": 192,
+            "prompt_tokens": 361,
+            "generated_tokens": 30,
+            "thinking_off": true,
+            "seconds": {
+              "load": 0.0,
+              "generate": 2.77
+            }
+          },
+          "environment": {
+            "python": "3.13.15",
+            "platform": "macOS-26.6.1-arm64-arm-64bit-Mach-O",
+            "machine": "arm64",
+            "torch": "2.15.0",
+            "transformers": "5.23.0",
+            "huggingface_hub": "2.4.0",
+            "tokenizers": "0.23.3",
+            "safetensors": "0.8.0",
+            "device": "cpu",
+            "torch_threads": 4,
+            "HF_HUB_OFFLINE": "1"
+          },
+          "note": "Quote format: a quote is accepted only after it matches the full text of a source found for this question (only spaces are normalized). A match confirms the text of the source, not that the source fits the question or that the knowledge files are right.",
+          "metrics": {
+            "valid_json": true,
+            "selected_source_id": "rules-difficulty-limits",
+            "allowed_source": true,
+            "exact_full_quote": false,
+            "status": "validation_failed",
+            "generated_tokens": 30
+          }
+        },
+        "specialized": {
+          "question": "Are decimal guesses allowed, and will they consume a round?",
+          "mode": "rag",
+          "profile": "specialized",
+          "answer_format": "quote",
+          "status": "answered",
+          "answer": "{\"source_id\": \"rules-valid-guesses\", \"quote\": \"A guess must be a whole number inside the range of the difficulty. An empty guess, text, a fraction such as 4.5, or a number outside the range is rejected with a message. A rejected guess does not use up a round.\"}",
+          "sources": [
+            {
+              "source_id": "rules-difficulty-limits",
+              "path": "knowledge/rules.md",
+              "title": "Difficulty ranges and round limits",
+              "score": 5.609,
+              "text": "The difficulty sets the range of possible numbers and the round limit.\nEasy uses the numbers 1 to 20 and allows 6 rounds. Normal uses the numbers\n1 to 100 and allows 8 rounds. Hard uses the numbers 1 to 50 and allows only\n5 rounds. Both secret numbers and every guess must be inside the range."
+            },
+            {
+              "source_id": "rules-valid-guesses",
+              "path": "knowledge/rules.md",
+              "title": "Valid guesses",
+              "score": 4.322,
+              "text": "A guess must be a whole number inside the range of the difficulty. An\nempty guess, text, a fraction such as 4.5, or a number outside the range\nis rejected with a message. A rejected guess does not use up a round."
+            },
+            {
+              "source_id": "rules-paired-rounds",
+              "path": "knowledge/rules.md",
+              "title": "Paired rounds",
+              "score": 1.589,
+              "text": "Every round has two moves, and both players always get their move. First\nyou guess Vector's secret number, then Vector guesses your secret number.\nVector still makes its move in a round where you already guessed right.\nOne round uses one attempt from the round limit."
+            }
+          ],
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are the Number Duel evidence assistant. Select exactly one source that directly answers the current question. Return ONLY a JSON object with exactly two keys: \"source_id\" and \"quote\". The quote must copy the ENTIRE text of the selected source, without its heading. Preserve every word, restriction, negation, number and punctuation mark. You may replace line breaks with spaces. Do not paraphrase, explain, invent rules or add any other text. If no supplied source answers the question, return {\"source_id\": null, \"quote\": null}."
+            },
+            {
+              "role": "user",
+              "content": "Sources:\n\n[rules-starting-a-duel] Starting a duel\nBefore the duel you choose a difficulty and enter your secret number.\nVector's secret number is drawn at random only when you press Start Duel.\nDuring the duel the difficulty and both secret numbers do not change.\nVector's secret number is shown only after the duel ends.\n\nQuestion: What do I need to do before a duel starts?"
+            },
+            {
+              "role": "assistant",
+              "content": "{\"source_id\": \"rules-starting-a-duel\", \"quote\": \"Before the duel you choose a difficulty and enter your secret number. Vector's secret number is drawn at random only when you press Start Duel. During the duel the difficulty and both secret numbers do not change. Vector's secret number is shown only after the duel ends.\"}"
+            },
+            {
+              "role": "user",
+              "content": "Sources:\n\n[rules-new-duel] Starting over with New Duel\nThe New Duel button is available during a duel and after it ends. It\nclears the current duel and its history and goes back to the setup. The\nchosen difficulty is kept. New Duel does not change the Solo game.\n\nQuestion: Can I use New Duel in the middle of a duel?"
+            },
+            {
+              "role": "assistant",
+              "content": "{\"source_id\": \"rules-new-duel\", \"quote\": \"The New Duel button is available during a duel and after it ends. It clears the current duel and its history and goes back to the setup. The chosen difficulty is kept. New Duel does not change the Solo game.\"}"
+            },
+            {
+              "role": "user",
+              "content": "Sources:\n\n[reliability-logs] Logs without secrets\nThe safe service writes a log line for every round. An accepted round is\nlogged as duel_round_accepted with the round number and the new status. A\nrejected round is logged as duel_round_rejected with the round number and\nthe stage, engine or guardrail. The logs never contain secret numbers or\nfull game states.\n\nQuestion: Do the game logs show my secret number?"
+            },
+            {
+              "role": "assistant",
+              "content": "{\"source_id\": \"reliability-logs\", \"quote\": \"The safe service writes a log line for every round. An accepted round is logged as duel_round_accepted with the round number and the new status. A rejected round is logged as duel_round_rejected with the round number and the stage, engine or guardrail. The logs never contain secret numbers or full game states.\"}"
+            },
+            {
+              "role": "user",
+              "content": "Sources:\n\n[rules-difficulty-limits] Difficulty ranges and round limits\nThe difficulty sets the range of possible numbers and the round limit.\nEasy uses the numbers 1 to 20 and allows 6 rounds. Normal uses the numbers\n1 to 100 and allows 8 rounds. Hard uses the numbers 1 to 50 and allows only\n5 rounds. Both secret numbers and every guess must be inside the range.\n\n[rules-valid-guesses] Valid guesses\nA guess must be a whole number inside the range of the difficulty. An\nempty guess, text, a fraction such as 4.5, or a number outside the range\nis rejected with a message. A rejected guess does not use up a round.\n\n[rules-paired-rounds] Paired rounds\nEvery round has two moves, and both players always get their move. First\nyou guess Vector's secret number, then Vector guesses your secret number.\nVector still makes its move in a round where you already guessed right.\nOne round uses one attempt from the round limit.\n\nQuestion: Are decimal guesses allowed, and will they consume a round?"
+            }
+          ],
+          "citations": [
+            "rules-valid-guesses"
+          ],
+          "accepted_quote": {
+            "source_id": "rules-valid-guesses",
+            "quote": "A guess must be a whole number inside the range of the difficulty. An empty guess, text, a fraction such as 4.5, or a number outside the range is rejected with a message. A rejected guess does not use up a round."
+          },
+          "checks": [
+            {
+              "check": "answer is not empty",
+              "passed": true
+            },
+            {
+              "check": "no thinking block in the answer",
+              "passed": true
+            },
+            {
+              "check": "answer is valid JSON",
+              "passed": true,
+              "key": "valid_json"
+            },
+            {
+              "check": "JSON has exactly the keys \"source_id\" and \"quote\"",
+              "passed": true,
+              "key": "two_keys"
+            },
+            {
+              "check": "source_id and quote are strings",
+              "passed": true,
+              "key": "types"
+            },
+            {
+              "check": "source_id is one of the sources found for this question",
+              "passed": true,
+              "key": "allowed_source",
+              "source_id": "rules-valid-guesses"
+            },
+            {
+              "check": "quote is the full text of that source (only spaces normalized)",
+              "passed": true,
+              "key": "exact_full_quote",
+              "quote_words": 42,
+              "source_words": 42
+            }
+          ],
+          "generator_called": true,
+          "generation": {
+            "model": "Qwen/Qwen3-0.6B",
+            "revision": "c1899de289a04d12100db370d81485cdf75e47ca",
+            "device": "cpu",
+            "dtype": "float32",
+            "local_files_only": true,
+            "inference_mode": true,
+            "enable_thinking": false,
+            "do_sample": false,
+            "max_new_tokens": 192,
+            "prompt_tokens": 845,
+            "generated_tokens": 68,
+            "thinking_off": true,
+            "seconds": {
+              "load": 0.0,
+              "generate": 6.58
+            }
+          },
+          "environment": {
+            "python": "3.13.15",
+            "platform": "macOS-26.6.1-arm64-arm-64bit-Mach-O",
+            "machine": "arm64",
+            "torch": "2.15.0",
+            "transformers": "5.23.0",
+            "huggingface_hub": "2.4.0",
+            "tokenizers": "0.23.3",
+            "safetensors": "0.8.0",
+            "device": "cpu",
+            "torch_threads": 4,
+            "HF_HUB_OFFLINE": "1"
+          },
+          "note": "Quote format: a quote is accepted only after it matches the full text of a source found for this question (only spaces are normalized). A match confirms the text of the source, not that the source fits the question or that the knowledge files are right.",
+          "metrics": {
+            "valid_json": true,
+            "selected_source_id": "rules-valid-guesses",
+            "allowed_source": true,
+            "exact_full_quote": true,
+            "status": "answered",
+            "generated_tokens": 68
+          }
+        }
+      }
+    },
+    {
+      "question": "What happens if I enter 4.5 as my guess?",
+      "sources": [
+        {
+          "source_id": "rules-valid-guesses",
+          "path": "knowledge/rules.md",
+          "title": "Valid guesses",
+          "score": 5.336,
+          "text": "A guess must be a whole number inside the range of the difficulty. An\nempty guess, text, a fraction such as 4.5, or a number outside the range\nis rejected with a message. A rejected guess does not use up a round."
+        },
+        {
+          "source_id": "rules-starting-a-duel",
+          "path": "knowledge/rules.md",
+          "title": "Starting a duel",
+          "score": 2.881,
+          "text": "Before the duel you choose a difficulty and enter your secret number.\nVector's secret number is drawn at random only when you press Start Duel.\nDuring the duel the difficulty and both secret numbers do not change.\nVector's secret number is shown only after the duel ends."
+        },
+        {
+          "source_id": "reliability-rejected-round",
+          "path": "knowledge/reliability.md",
+          "title": "What happens when a round is rejected",
+          "score": 2.857,
+          "text": "When a round is rejected, the game state does not change. No round is\nadded, the round counter stays the same, and the old duel state is kept.\nA rejected guess, such as a number outside the range, shows a clear\nmessage. A round stopped by the inspector shows only a general message,\nnot the inner reason, and you can simply try again."
+        }
+      ],
+      "same_sources_for_both_profiles": true,
+      "same_current_turn_for_both_profiles": true,
+      "runs": {
+        "baseline": {
+          "question": "What happens if I enter 4.5 as my guess?",
+          "mode": "rag",
+          "profile": "baseline",
+          "answer_format": "quote",
+          "status": "answered",
+          "answer": "{\"source_id\": \"rules-valid-guesses\", \"quote\": \"A guess must be a whole number inside the range of the difficulty. An empty guess, text, a fraction such as 4.5, or a number outside the range is rejected with a message. A rejected guess does not use up a round.\"}",
+          "sources": [
+            {
+              "source_id": "rules-valid-guesses",
+              "path": "knowledge/rules.md",
+              "title": "Valid guesses",
+              "score": 5.336,
+              "text": "A guess must be a whole number inside the range of the difficulty. An\nempty guess, text, a fraction such as 4.5, or a number outside the range\nis rejected with a message. A rejected guess does not use up a round."
+            },
+            {
+              "source_id": "rules-starting-a-duel",
+              "path": "knowledge/rules.md",
+              "title": "Starting a duel",
+              "score": 2.881,
+              "text": "Before the duel you choose a difficulty and enter your secret number.\nVector's secret number is drawn at random only when you press Start Duel.\nDuring the duel the difficulty and both secret numbers do not change.\nVector's secret number is shown only after the duel ends."
+            },
+            {
+              "source_id": "reliability-rejected-round",
+              "path": "knowledge/reliability.md",
+              "title": "What happens when a round is rejected",
+              "score": 2.857,
+              "text": "When a round is rejected, the game state does not change. No round is\nadded, the round counter stays the same, and the old duel state is kept.\nA rejected guess, such as a number outside the range, shows a clear\nmessage. A round stopped by the inspector shows only a general message,\nnot the inner reason, and you can simply try again."
+            }
+          ],
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are the Number Duel evidence assistant. Select exactly one source that directly answers the current question. Return ONLY a JSON object with exactly two keys: \"source_id\" and \"quote\". The quote must copy the ENTIRE text of the selected source, without its heading. Preserve every word, restriction, negation, number and punctuation mark. You may replace line breaks with spaces. Do not paraphrase, explain, invent rules or add any other text. If no supplied source answers the question, return {\"source_id\": null, \"quote\": null}."
+            },
+            {
+              "role": "user",
+              "content": "Sources:\n\n[rules-valid-guesses] Valid guesses\nA guess must be a whole number inside the range of the difficulty. An\nempty guess, text, a fraction such as 4.5, or a number outside the range\nis rejected with a message. A rejected guess does not use up a round.\n\n[rules-starting-a-duel] Starting a duel\nBefore the duel you choose a difficulty and enter your secret number.\nVector's secret number is drawn at random only when you press Start Duel.\nDuring the duel the difficulty and both secret numbers do not change.\nVector's secret number is shown only after the duel ends.\n\n[reliability-rejected-round] What happens when a round is rejected\nWhen a round is rejected, the game state does not change. No round is\nadded, the round counter stays the same, and the old duel state is kept.\nA rejected guess, such as a number outside the range, shows a clear\nmessage. A round stopped by the inspector shows only a general message,\nnot the inner reason, and you can simply try again.\n\nQuestion: What happens if I enter 4.5 as my guess?"
+            }
+          ],
+          "citations": [
+            "rules-valid-guesses"
+          ],
+          "accepted_quote": {
+            "source_id": "rules-valid-guesses",
+            "quote": "A guess must be a whole number inside the range of the difficulty. An empty guess, text, a fraction such as 4.5, or a number outside the range is rejected with a message. A rejected guess does not use up a round."
+          },
+          "checks": [
+            {
+              "check": "answer is not empty",
+              "passed": true
+            },
+            {
+              "check": "no thinking block in the answer",
+              "passed": true
+            },
+            {
+              "check": "answer is valid JSON",
+              "passed": true,
+              "key": "valid_json"
+            },
+            {
+              "check": "JSON has exactly the keys \"source_id\" and \"quote\"",
+              "passed": true,
+              "key": "two_keys"
+            },
+            {
+              "check": "source_id and quote are strings",
+              "passed": true,
+              "key": "types"
+            },
+            {
+              "check": "source_id is one of the sources found for this question",
+              "passed": true,
+              "key": "allowed_source",
+              "source_id": "rules-valid-guesses"
+            },
+            {
+              "check": "quote is the full text of that source (only spaces normalized)",
+              "passed": true,
+              "key": "exact_full_quote",
+              "quote_words": 42,
+              "source_words": 42
+            }
+          ],
+          "generator_called": true,
+          "generation": {
+            "model": "Qwen/Qwen3-0.6B",
+            "revision": "c1899de289a04d12100db370d81485cdf75e47ca",
+            "device": "cpu",
+            "dtype": "float32",
+            "local_files_only": true,
+            "inference_mode": true,
+            "enable_thinking": false,
+            "do_sample": false,
+            "max_new_tokens": 192,
+            "prompt_tokens": 365,
+            "generated_tokens": 68,
+            "thinking_off": true,
+            "seconds": {
+              "load": 0.0,
+              "generate": 4.62
+            }
+          },
+          "environment": {
+            "python": "3.13.15",
+            "platform": "macOS-26.6.1-arm64-arm-64bit-Mach-O",
+            "machine": "arm64",
+            "torch": "2.15.0",
+            "transformers": "5.23.0",
+            "huggingface_hub": "2.4.0",
+            "tokenizers": "0.23.3",
+            "safetensors": "0.8.0",
+            "device": "cpu",
+            "torch_threads": 4,
+            "HF_HUB_OFFLINE": "1"
+          },
+          "note": "Quote format: a quote is accepted only after it matches the full text of a source found for this question (only spaces are normalized). A match confirms the text of the source, not that the source fits the question or that the knowledge files are right.",
+          "metrics": {
+            "valid_json": true,
+            "selected_source_id": "rules-valid-guesses",
+            "allowed_source": true,
+            "exact_full_quote": true,
+            "status": "answered",
+            "generated_tokens": 68
+          }
+        },
+        "specialized": {
+          "question": "What happens if I enter 4.5 as my guess?",
+          "mode": "rag",
+          "profile": "specialized",
+          "answer_format": "quote",
+          "status": "answered",
+          "answer": "{\"source_id\": \"rules-valid-guesses\", \"quote\": \"A guess must be a whole number inside the range of the difficulty. An empty guess, text, a fraction such as 4.5, or a number outside the range is rejected with a message. A rejected guess does not use up a round.\"}",
+          "sources": [
+            {
+              "source_id": "rules-valid-guesses",
+              "path": "knowledge/rules.md",
+              "title": "Valid guesses",
+              "score": 5.336,
+              "text": "A guess must be a whole number inside the range of the difficulty. An\nempty guess, text, a fraction such as 4.5, or a number outside the range\nis rejected with a message. A rejected guess does not use up a round."
+            },
+            {
+              "source_id": "rules-starting-a-duel",
+              "path": "knowledge/rules.md",
+              "title": "Starting a duel",
+              "score": 2.881,
+              "text": "Before the duel you choose a difficulty and enter your secret number.\nVector's secret number is drawn at random only when you press Start Duel.\nDuring the duel the difficulty and both secret numbers do not change.\nVector's secret number is shown only after the duel ends."
+            },
+            {
+              "source_id": "reliability-rejected-round",
+              "path": "knowledge/reliability.md",
+              "title": "What happens when a round is rejected",
+              "score": 2.857,
+              "text": "When a round is rejected, the game state does not change. No round is\nadded, the round counter stays the same, and the old duel state is kept.\nA rejected guess, such as a number outside the range, shows a clear\nmessage. A round stopped by the inspector shows only a general message,\nnot the inner reason, and you can simply try again."
+            }
+          ],
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are the Number Duel evidence assistant. Select exactly one source that directly answers the current question. Return ONLY a JSON object with exactly two keys: \"source_id\" and \"quote\". The quote must copy the ENTIRE text of the selected source, without its heading. Preserve every word, restriction, negation, number and punctuation mark. You may replace line breaks with spaces. Do not paraphrase, explain, invent rules or add any other text. If no supplied source answers the question, return {\"source_id\": null, \"quote\": null}."
+            },
+            {
+              "role": "user",
+              "content": "Sources:\n\n[rules-starting-a-duel] Starting a duel\nBefore the duel you choose a difficulty and enter your secret number.\nVector's secret number is drawn at random only when you press Start Duel.\nDuring the duel the difficulty and both secret numbers do not change.\nVector's secret number is shown only after the duel ends.\n\nQuestion: What do I need to do before a duel starts?"
+            },
+            {
+              "role": "assistant",
+              "content": "{\"source_id\": \"rules-starting-a-duel\", \"quote\": \"Before the duel you choose a difficulty and enter your secret number. Vector's secret number is drawn at random only when you press Start Duel. During the duel the difficulty and both secret numbers do not change. Vector's secret number is shown only after the duel ends.\"}"
+            },
+            {
+              "role": "user",
+              "content": "Sources:\n\n[rules-new-duel] Starting over with New Duel\nThe New Duel button is available during a duel and after it ends. It\nclears the current duel and its history and goes back to the setup. The\nchosen difficulty is kept. New Duel does not change the Solo game.\n\nQuestion: Can I use New Duel in the middle of a duel?"
+            },
+            {
+              "role": "assistant",
+              "content": "{\"source_id\": \"rules-new-duel\", \"quote\": \"The New Duel button is available during a duel and after it ends. It clears the current duel and its history and goes back to the setup. The chosen difficulty is kept. New Duel does not change the Solo game.\"}"
+            },
+            {
+              "role": "user",
+              "content": "Sources:\n\n[reliability-logs] Logs without secrets\nThe safe service writes a log line for every round. An accepted round is\nlogged as duel_round_accepted with the round number and the new status. A\nrejected round is logged as duel_round_rejected with the round number and\nthe stage, engine or guardrail. The logs never contain secret numbers or\nfull game states.\n\nQuestion: Do the game logs show my secret number?"
+            },
+            {
+              "role": "assistant",
+              "content": "{\"source_id\": \"reliability-logs\", \"quote\": \"The safe service writes a log line for every round. An accepted round is logged as duel_round_accepted with the round number and the new status. A rejected round is logged as duel_round_rejected with the round number and the stage, engine or guardrail. The logs never contain secret numbers or full game states.\"}"
+            },
+            {
+              "role": "user",
+              "content": "Sources:\n\n[rules-valid-guesses] Valid guesses\nA guess must be a whole number inside the range of the difficulty. An\nempty guess, text, a fraction such as 4.5, or a number outside the range\nis rejected with a message. A rejected guess does not use up a round.\n\n[rules-starting-a-duel] Starting a duel\nBefore the duel you choose a difficulty and enter your secret number.\nVector's secret number is drawn at random only when you press Start Duel.\nDuring the duel the difficulty and both secret numbers do not change.\nVector's secret number is shown only after the duel ends.\n\n[reliability-rejected-round] What happens when a round is rejected\nWhen a round is rejected, the game state does not change. No round is\nadded, the round counter stays the same, and the old duel state is kept.\nA rejected guess, such as a number outside the range, shows a clear\nmessage. A round stopped by the inspector shows only a general message,\nnot the inner reason, and you can simply try again.\n\nQuestion: What happens if I enter 4.5 as my guess?"
+            }
+          ],
+          "citations": [
+            "rules-valid-guesses"
+          ],
+          "accepted_quote": {
+            "source_id": "rules-valid-guesses",
+            "quote": "A guess must be a whole number inside the range of the difficulty. An empty guess, text, a fraction such as 4.5, or a number outside the range is rejected with a message. A rejected guess does not use up a round."
+          },
+          "checks": [
+            {
+              "check": "answer is not empty",
+              "passed": true
+            },
+            {
+              "check": "no thinking block in the answer",
+              "passed": true
+            },
+            {
+              "check": "answer is valid JSON",
+              "passed": true,
+              "key": "valid_json"
+            },
+            {
+              "check": "JSON has exactly the keys \"source_id\" and \"quote\"",
+              "passed": true,
+              "key": "two_keys"
+            },
+            {
+              "check": "source_id and quote are strings",
+              "passed": true,
+              "key": "types"
+            },
+            {
+              "check": "source_id is one of the sources found for this question",
+              "passed": true,
+              "key": "allowed_source",
+              "source_id": "rules-valid-guesses"
+            },
+            {
+              "check": "quote is the full text of that source (only spaces normalized)",
+              "passed": true,
+              "key": "exact_full_quote",
+              "quote_words": 42,
+              "source_words": 42
+            }
+          ],
+          "generator_called": true,
+          "generation": {
+            "model": "Qwen/Qwen3-0.6B",
+            "revision": "c1899de289a04d12100db370d81485cdf75e47ca",
+            "device": "cpu",
+            "dtype": "float32",
+            "local_files_only": true,
+            "inference_mode": true,
+            "enable_thinking": false,
+            "do_sample": false,
+            "max_new_tokens": 192,
+            "prompt_tokens": 849,
+            "generated_tokens": 68,
+            "thinking_off": true,
+            "seconds": {
+              "load": 0.0,
+              "generate": 6.45
+            }
+          },
+          "environment": {
+            "python": "3.13.15",
+            "platform": "macOS-26.6.1-arm64-arm-64bit-Mach-O",
+            "machine": "arm64",
+            "torch": "2.15.0",
+            "transformers": "5.23.0",
+            "huggingface_hub": "2.4.0",
+            "tokenizers": "0.23.3",
+            "safetensors": "0.8.0",
+            "device": "cpu",
+            "torch_threads": 4,
+            "HF_HUB_OFFLINE": "1"
+          },
+          "note": "Quote format: a quote is accepted only after it matches the full text of a source found for this question (only spaces are normalized). A match confirms the text of the source, not that the source fits the question or that the knowledge files are right.",
+          "metrics": {
+            "valid_json": true,
+            "selected_source_id": "rules-valid-guesses",
+            "allowed_source": true,
+            "exact_full_quote": true,
+            "status": "answered",
+            "generated_tokens": 68
+          }
+        }
+      }
+    }
+  ],
+  "summary": {
+    "baseline": {
+      "answers": 3,
+      "valid_json": 3,
+      "allowed_source": 3,
+      "exact_full_quote": 1,
+      "answered": 1,
+      "validation_failed": 2,
+      "abstained": 0,
+      "mean_generated_tokens": 55.0
+    },
+    "specialized": {
+      "answers": 3,
+      "valid_json": 3,
+      "allowed_source": 3,
+      "exact_full_quote": 3,
+      "answered": 3,
+      "validation_failed": 0,
+      "abstained": 0,
+      "mean_generated_tokens": 68.0
+    }
+  }
+}

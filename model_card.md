@@ -7,12 +7,12 @@
 | Machine learning in the game | None: Vector is a plain algorithm, and the game uses no model |
 | Local model | Qwen/Qwen3-0.6B, a small pretrained language model (pinned revision `c1899de`), run on the CPU by `coach_model.py`; used by the Coach CLI, not by the game |
 | Retrieval | BM25 keyword search over 22 sections of `knowledge/*.md` (`coach_retrieval.py`) |
-| Strategy Coach | CLI prototype `coach.py`: question → knowledge search → local model → answer with checked source IDs; not connected to the Streamlit app |
+| Strategy Coach | CLI prototype `coach.py`: question → knowledge search → local model → answer with checked source IDs (`text`) or an exact, checked quotation of one source (`quote`); not connected to the Streamlit app |
 | Prompt profiles | `baseline` (default) and `specialized`, which adds three few-shot examples; prompt specialization only, no weight training |
 | Not used | No training or fine-tuning, no external AI inference API, no Coach in the interface |
 | Advanced feature | A built-in reliability system that checks every duel step before it is saved |
 | Tested environment | Python 3.13.15, Streamlit 1.60.0; coach tools on macOS arm64 with torch 2.15.0 and transformers 5.23.0, CPU only |
-| Last confirmed results | 171 automated tests passed; 6 of 6 evaluation scenarios passed |
+| Last confirmed results | 188 automated tests passed; 6 of 6 evaluation scenarios passed |
 
 ## Purpose and intended use
 
@@ -99,7 +99,7 @@ Limits:
 - the scenarios test the game core, not the browser page;
 - the tests and the evaluation were written with help from the same AI
   agent that helped write the code, so they may share blind spots with it;
-- the 171 passing tests and the 6 passing scenarios are separate measures.
+- the 188 passing tests and the 6 passing scenarios are separate measures.
   Neither proves that the app has no bugs.
 
 ## Local language model (separate CLI)
@@ -161,6 +161,9 @@ that cites sources like `[reliability-midpoint-not-required]`.
 - **Without retrieval**: `--no-retrieval` skips the search and calls the
   same model with the same instructions and settings, without sources. Its
   status is `answered_without_retrieval`.
+- **Quote format**: `--answer-format quote` asks the model to pick one
+  found source and return its full text as JSON. The quote is checked
+  before it is accepted; see "Exact-quote answer format" below.
 
 Three real runs are saved in [artifacts/rag_smoke.json](artifacts/rag_smoke.json),
 all with `HF_HUB_OFFLINE=1`:
@@ -336,6 +339,106 @@ the six answers meets all four points. The 4.5 question already found the
 rule first before the fix, so its answers do not show an effect of the
 fix. Nothing here can be credited to the few-shot profile: both profiles
 made the error.
+
+## Exact-quote answer format
+
+**Contract.** With `--answer-format quote`, the model does not write its
+own answer. It selects one of the sources found for the current question
+and returns only a JSON object with `source_id` and `quote`, where `quote`
+is the entire text of that section. The coach checks the answer before it
+accepts the quote:
+
+1. the answer is valid JSON;
+2. it has exactly the two keys `source_id` and `quote`;
+3. both are strings (`null` / `null` means the model found no fitting
+   source, and the status is `abstained`);
+4. `source_id` is one of the sources found for this question; sources of
+   the few-shot examples are not allowed automatically;
+5. the quote equals the full text of that section. Only spaces and line
+   breaks are normalized; no word, negation, number or punctuation mark may
+   change, and a part of the section is not enough.
+
+A wrong format, source or text gives `validation_failed`. The model's raw
+answer is always kept unchanged, `accepted_quote` is only set after every
+check passed, and a wrong quote is never replaced by the right one.
+
+**Setup.** The quote format uses its own system prompt, the same for both
+profiles (`coach_prompts.QUOTE_SYSTEM_PROMPT`), the same knowledge search
+with three sources, the same user message format, and at most 192 new
+tokens instead of 128. The model and the other settings are unchanged.
+`baseline` gets the prompt and the current question. `specialized` also
+gets three quote examples on the same topics as before (setting up a duel,
+New Duel, logs); each answers with the JSON of its own section's full
+text. The text-format examples did not change, and no example is about
+fractions.
+
+**Real run.** `evaluate_coach.py --suite fraction-regression
+--answer-format quote` ran the three fractional-input questions with both
+profiles: one search per question, the same sources and the same current
+turn within each pair, one shared generator, 6 real generations with
+`HF_HUB_OFFLINE=1`. Everything is saved in
+[artifacts/coach_quote_regression.json](artifacts/coach_quote_regression.json).
+
+| Metric (3 questions, 1 generation each) | baseline | specialized |
+|------------------------------------------|----------|-------------|
+| Valid JSON | 3 of 3 | 3 of 3 |
+| Selected source is one of the found sources | 3 of 3 | 3 of 3 |
+| Exact full quote | 1 of 3 | 3 of 3 |
+| `answered` | 1 | 3 |
+| `validation_failed` | 2 | 0 |
+| `abstained` | 0 | 0 |
+| Mean generated tokens | 55.0 | 68.0 |
+
+One accepted quote (specialized, "Are decimal guesses allowed, and will
+they consume a round?"):
+
+> {"source_id": "rules-valid-guesses", "quote": "A guess must be a whole
+> number inside the range of the difficulty. An empty guess, text, a
+> fraction such as 4.5, or a number outside the range is rejected with a
+> message. A rejected guess does not use up a round."}
+
+One rejected answer (baseline, "Can I submit a fractional guess, and does
+it use a round?"). It picked the right source, but wrote "does not use a
+round" instead of "does not use up a round", so the quote is not the full
+text of the section:
+
+> {"source_id": "rules-valid-guesses", "quote": "A guess must be a whole
+> number inside the range of the difficulty. An empty guess, text, a
+> fraction such as 4.5, or a number outside the range is rejected with a
+> message. A rejected guess does not use a round."}
+
+The other rejected answer (baseline, decimal question) picked
+`rules-difficulty-limits` and quoted only one of its sentences.
+
+**Manual reading.** This is a manual check of these six cases, not an
+automatic metric.
+
+| Question | Profile | Source selected | Quote accepted | Accepted text says fractions are rejected | Accepted text says no round is used |
+|----------|---------|-----------------|----------------|-------------------------------------------|-------------------------------------|
+| Fractional | baseline | `rules-valid-guesses` | No (one word changed) | — | — |
+| Fractional | specialized | `rules-valid-guesses` | Yes | Yes | Yes |
+| Decimal | baseline | `rules-difficulty-limits` | No (only one sentence) | — | — |
+| Decimal | specialized | `rules-valid-guesses` | Yes | Yes ("a fraction such as 4.5") | Yes |
+| 4.5 | baseline | `rules-valid-guesses` | Yes | Yes | Yes |
+| 4.5 | specialized | `rules-valid-guesses` | Yes | Yes | Yes |
+
+**What this shows, and its limits.** All four accepted quotes are the full
+`rules-valid-guesses` section, so each states that fractional input is
+rejected and does not use up a round. In this run the only difference
+between the two profiles was the examples, and the specialized profile got
+three exact quotes against one. These are three questions with one
+generation each, from a development / regression set written after the
+error analysis, so the result does not generalize. It belongs to the new
+quote contract; the earlier text-format comparisons stay as historical
+results for their own contract.
+
+An exact match confirms that the accepted text is the text of a found
+source. It does not show that this source answers the question: had a model
+quoted the full `rules-difficulty-limits` section for the decimal question,
+the quote would have been accepted although it does not answer it. It also
+cannot show that the knowledge files themselves are correct. And the check
+is strict on purpose: the baseline's fractional answer kept the meaning but
+changed one word, and it was rejected.
 
 ## State, data and privacy
 
