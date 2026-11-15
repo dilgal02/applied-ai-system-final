@@ -41,12 +41,22 @@ def validate_transition(before: DuelState, after: DuelState) -> None:
 
     Guesses and hints (worked out here, without the game functions):
     - the numbers in before are ints (not bools);
+    - the game range is not empty and holds both secrets;
     - in every round both guesses are ints inside [low, high];
     - player_outcome matches player_guess against bot_secret, and
       bot_outcome matches bot_guess against player_secret;
     - the bot's new guess is inside its range [bot_low, bot_high].
 
-    It does not check the bot's new range or the new status yet.
+    Bot range and result (rebuilt here from the whole history):
+    - the bot's range starts at [low, high]; every bot guess must be
+      inside the range rebuilt so far, and the range must stay non-empty
+      and keep holding player_secret;
+    - the range rebuilt from the earlier rounds equals before.bot_low
+      and before.bot_high;
+    - the final rebuilt range equals after.bot_low and after.bot_high,
+      which must be ints (not bools);
+    - no round follows a round that ended the duel, and after.status
+      is a str equal to the status rebuilt from the history.
 
     Returns None when everything is fine. Neither state is changed.
 
@@ -105,6 +115,18 @@ def validate_transition(before: DuelState, after: DuelState) -> None:
         if not _is_int(value):
             raise ValueError(f"before.{field} must be an int, got {value!r}.")
 
+    if before.low > before.high:
+        raise ValueError(
+            f"Game range is empty: low {before.low} > high {before.high}."
+        )
+    for field in ("player_secret", "bot_secret"):
+        secret = getattr(before, field)
+        if not before.low <= secret <= before.high:
+            raise ValueError(
+                f"{field} {secret} is outside the range "
+                f"{before.low}-{before.high}."
+            )
+
     for number, round_ in enumerate(after.rounds, start=1):
         # The player guesses the bot's secret; the bot guesses the player's.
         moves = (
@@ -143,4 +165,78 @@ def validate_transition(before: DuelState, after: DuelState) -> None:
             f"Round {len(after.rounds)}: bot_guess {new_round.bot_guess} "
             f"is outside the bot's range "
             f"{before.bot_low}-{before.bot_high}."
+        )
+
+    # Rebuild the bot's range and the duel status from the whole history.
+    bot_low, bot_high = before.low, before.high
+    status = "playing"
+    for number, round_ in enumerate(after.rounds, start=1):
+        if number == len(after.rounds):
+            # Before the new round: the earlier rounds must lead to the
+            # range stored in before (with no history, that is low-high).
+            if (bot_low, bot_high) != (before.bot_low, before.bot_high):
+                raise ValueError(
+                    f"before bot range {before.bot_low}-{before.bot_high} "
+                    f"does not match the range rebuilt from history "
+                    f"({bot_low}-{bot_high})."
+                )
+        if status != "playing":
+            raise ValueError(
+                f"Round {number}: the duel was already over after round "
+                f"{number - 1} ({status})."
+            )
+
+        guess = round_.bot_guess
+        if not bot_low <= guess <= bot_high:
+            raise ValueError(
+                f"Round {number}: bot_guess {guess} is not in the bot's "
+                f"rebuilt range {bot_low}-{bot_high}."
+            )
+        if round_.bot_outcome == "Too Low":
+            bot_low = guess + 1
+        elif round_.bot_outcome == "Too High":
+            bot_high = guess - 1
+        else:  # "Win": the hint checks above allow no other value.
+            bot_low = bot_high = guess
+        if bot_low > bot_high:
+            raise ValueError(
+                f"Round {number}: the bot's rebuilt range is empty "
+                f"({bot_low}-{bot_high})."
+            )
+        if not bot_low <= before.player_secret <= bot_high:
+            raise ValueError(
+                f"Round {number}: the bot's rebuilt range "
+                f"{bot_low}-{bot_high} no longer holds player_secret."
+            )
+
+        player_won = round_.player_outcome == "Win"
+        bot_won = round_.bot_outcome == "Win"
+        if player_won and bot_won:
+            status = "draw"
+        elif player_won:
+            status = "player_won"
+        elif bot_won:
+            status = "bot_won"
+        elif number >= before.attempt_limit:
+            status = "draw"
+        else:
+            status = "playing"
+
+    for field in ("bot_low", "bot_high"):
+        value = getattr(after, field)
+        if not _is_int(value):
+            raise ValueError(f"after.{field} must be an int, got {value!r}.")
+    if (bot_low, bot_high) != (after.bot_low, after.bot_high):
+        raise ValueError(
+            f"after bot range {after.bot_low}-{after.bot_high} does not "
+            f"match the range rebuilt from history ({bot_low}-{bot_high})."
+        )
+
+    if not isinstance(after.status, str):
+        raise ValueError(
+            f"after.status must be a str, got {after.status!r}."
+        )
+    if after.status != status:
+        raise ValueError(
+            f"after.status is {after.status!r}, expected {status!r}."
         )

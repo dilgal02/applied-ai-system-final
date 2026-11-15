@@ -2,7 +2,7 @@ from dataclasses import asdict, replace
 
 import pytest
 
-from duel_logic import create_duel, play_round
+from duel_logic import DuelRound, create_duel, play_round
 from guardrails import validate_transition
 
 
@@ -313,3 +313,240 @@ def test_guess_outside_range_is_rejected(side, guess, outcome, message):
 
     assert asdict(before) == before_snapshot
     assert asdict(bad_after) == bad_after_snapshot
+
+
+# --- Bot range and duel result ---------------------------------------
+
+DUEL = {
+    "low": 1,
+    "high": 100,
+    "attempt_limit": 8,
+    "player_secret": 63,
+    "bot_secret": 27,
+}
+
+
+def make_duel(**changes):
+    return create_duel(**{**DUEL, **changes})
+
+
+def two_rounds():
+    """before: bot guessed 50 ("Too Low"), range 51-100.
+    after: bot guessed 75 ("Too High"), range 51-74, still playing."""
+    before = play_round(make_duel(), player_guess=40)
+    after = play_round(before, player_guess=20)
+    return before, after
+
+
+def assert_rejected(before, after, message):
+    """validate_transition must fail with message and change nothing."""
+    before_snapshot = asdict(before)
+    after_snapshot = asdict(after)
+
+    with pytest.raises(ValueError, match=message):
+        validate_transition(before, after)
+
+    assert asdict(before) == before_snapshot
+    assert asdict(after) == after_snapshot
+
+
+@pytest.mark.parametrize(
+    "duel_changes, previous_guesses, new_guess, outcomes, status",
+    [
+        (
+            {"low": 7, "high": 7, "attempt_limit": 1,
+             "player_secret": 7, "bot_secret": 7},
+            (), 7, ("Win", "Win"), "draw",
+        ),
+        ({"attempt_limit": 2}, (40,), 20, ("Too Low", "Too High"), "draw"),
+    ],
+    ids=[
+        "single-number-both-win",
+        "last-attempt-without-winner",
+    ],
+)
+def test_valid_final_transition_passes(
+    duel_changes, previous_guesses, new_guess, outcomes, status
+):
+    before = make_duel(**duel_changes)
+    for guess in previous_guesses:
+        before = play_round(before, player_guess=guess)
+    after = play_round(before, player_guess=new_guess)
+    last = after.rounds[-1]
+    assert (last.player_outcome, last.bot_outcome) == outcomes
+    assert after.status == status
+    before_snapshot = asdict(before)
+    after_snapshot = asdict(after)
+
+    assert validate_transition(before, after) is None
+
+    assert asdict(before) == before_snapshot
+    assert asdict(after) == after_snapshot
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"bot_high": 75},
+        {"bot_low": 52},
+        {"bot_low": 51, "bot_high": 100},
+    ],
+    ids=[
+        "high-keeps-ruled-out-guess",
+        "low-moved-too-far",
+        "hint-not-applied",
+    ],
+)
+def test_wrong_new_bot_range_is_rejected(change):
+    before, after = two_rounds()
+    assert (after.bot_low, after.bot_high) == (51, 74)
+    assert_rejected(before, replace(after, **change), "after bot range")
+
+
+@pytest.mark.parametrize(
+    "field, value",
+    [
+        ("bot_low", 51.0),
+        ("bot_high", 74.0),
+    ],
+    ids=[
+        "low-float",
+        "high-float",
+    ],
+)
+def test_float_bot_bound_is_rejected(field, value):
+    before, after = two_rounds()
+    bad_after = replace(after, **{field: value})
+    # The number is equal, so only the type check can catch it.
+    assert getattr(bad_after, field) == getattr(after, field)
+    assert_rejected(before, bad_after, f"after.{field} must be an int")
+
+
+@pytest.mark.parametrize(
+    "previous_guesses, fake_range",
+    [
+        ((), {"bot_low": 2}),
+        ((40,), {"bot_low": 1, "bot_high": 100}),
+    ],
+    ids=[
+        "no-history-but-not-full-range",
+        "earlier-hint-ignored",
+    ],
+)
+def test_before_bot_range_must_match_history(previous_guesses, fake_range):
+    before = make_duel()
+    for guess in previous_guesses:
+        before = play_round(before, player_guess=guess)
+    fake_before = replace(before, **fake_range)
+    # play_round trusts the fake range, so after is consistent with it.
+    after = play_round(fake_before, player_guess=20)
+    assert_rejected(fake_before, after, "before bot range")
+
+
+@pytest.mark.parametrize(
+    "fake_status",
+    ["player_won", "draw"],
+)
+def test_premature_end_is_rejected(fake_status):
+    before, after = two_rounds()
+    assert after.status == "playing"
+    bad_after = replace(after, status=fake_status)
+    assert_rejected(before, bad_after, "expected 'playing'")
+
+
+@pytest.mark.parametrize(
+    "player_secret, guess, real_status",
+    [
+        (63, 27, "player_won"),
+        (50, 40, "bot_won"),
+        (50, 27, "draw"),
+    ],
+    ids=[
+        "player-won",
+        "bot-won",
+        "both-won",
+    ],
+)
+def test_playing_after_real_win_is_rejected(player_secret, guess, real_status):
+    before = make_duel(player_secret=player_secret)
+    after = play_round(before, player_guess=guess)
+    assert after.status == real_status
+    bad_after = replace(after, status="playing")
+    assert_rejected(before, bad_after, f"expected '{real_status}'")
+
+
+@pytest.mark.parametrize(
+    "player_secret, winning_guess, real_status",
+    [
+        (63, 27, "player_won"),
+        (50, 40, "bot_won"),
+    ],
+    ids=[
+        "after-player-won",
+        "after-bot-won",
+    ],
+)
+def test_round_after_earlier_win_is_rejected(
+    player_secret, winning_guess, real_status
+):
+    finished = play_round(
+        make_duel(player_secret=player_secret), player_guess=winning_guess
+    )
+    assert finished.status == real_status
+    # A faulty component resets the status and plays one more round.
+    fake_before = replace(finished, status="playing")
+    after = play_round(fake_before, player_guess=20)
+    assert_rejected(fake_before, after, "already over")
+
+
+def empty_game_range():
+    before = make_duel()
+    after = play_round(before, player_guess=40)
+    return replace(before, low=10, high=5), replace(after, low=10, high=5)
+
+
+def secret_outside_game_range():
+    before = make_duel()
+    after = play_round(before, player_guess=40)
+    return (
+        replace(before, player_secret=101),
+        replace(after, player_secret=101),
+    )
+
+
+def earlier_bot_guess_outside_rebuilt_range():
+    first = play_round(make_duel(), player_guess=40)
+    # After round 1 the bot searches 51-100, but round 2 claims 30.
+    # The hint "Too Low" (30 vs 63) is correct, only the range is wrong.
+    bad_round = DuelRound(
+        player_guess=20,
+        player_outcome="Too Low",
+        bot_guess=30,
+        bot_outcome="Too Low",
+    )
+    before = replace(
+        first, rounds=first.rounds + (bad_round,), bot_low=31, bot_high=100
+    )
+    after = play_round(before, player_guess=10)
+    return before, after
+
+
+@pytest.mark.parametrize(
+    "build, message",
+    [
+        (empty_game_range, "Game range is empty"),
+        (secret_outside_game_range, "player_secret 101 is outside the range"),
+        (
+            earlier_bot_guess_outside_rebuilt_range,
+            "Round 2: bot_guess 30 is not in the bot's rebuilt range",
+        ),
+    ],
+    ids=[
+        "empty-game-range",
+        "secret-outside-game-range",
+        "earlier-bot-guess-outside-rebuilt-range",
+    ],
+)
+def test_bad_setup_or_history_is_rejected(build, message):
+    before, after = build()
+    assert_rejected(before, after, message)
