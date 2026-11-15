@@ -8,6 +8,10 @@ The model (Qwen/Qwen3-0.6B) runs on the CPU with PyTorch and Transformers.
 "download" is the only command that uses the network. "smoke" reads only
 local files and never downloads anything. The game does not need this
 module or its dependencies (see requirements-coach.txt).
+
+LocalGenerator (through get_generator) is the reusable part: it loads the
+model lazily, once, and generates an answer for chat messages. Importing
+this module does not import torch or load any weights.
 """
 import argparse
 import importlib.util
@@ -16,6 +20,8 @@ import os
 import platform
 import sys
 import time
+from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -147,8 +153,187 @@ def looks_english(text: str) -> bool:
     return latin / len(letters) >= 0.95
 
 
+class CoachSetupError(RuntimeError):
+    """The coach cannot run: a dependency or the local model is missing.
+
+    The message tells the user what to install or run.
+    """
+
+
+@dataclass(frozen=True)
+class Generation:
+    """The result of one local generation."""
+
+    text: str  # the answer, special tokens removed
+    raw_text: str  # the answer with special tokens, to look for <think>
+    prompt_tokens: int
+    generated_tokens: int
+    max_new_tokens: int
+    thinking_off: bool  # the chat template closed the thinking block
+    load_seconds: float  # time to load the model in this call (0 if loaded)
+    generate_seconds: float
+
+    def settings(self) -> dict:
+        """Model and generation settings, for reports."""
+        return {
+            "model": MODEL_ID,
+            "revision": MODEL_REVISION,
+            "device": "cpu",
+            "dtype": "float32",
+            "local_files_only": True,
+            "inference_mode": True,
+            "enable_thinking": False,
+            "do_sample": False,
+            "max_new_tokens": self.max_new_tokens,
+        }
+
+
+class LocalGenerator:
+    """Runs the pinned local model on the CPU.
+
+    The model is loaded lazily on the first generate() call and then kept.
+    It only reads local files: nothing is downloaded and nothing is
+    printed. Setup problems raise CoachSetupError.
+    """
+
+    def __init__(self):
+        self._torch = None
+        self._tokenizer = None
+        self._model = None
+
+    @property
+    def loaded(self) -> bool:
+        return self._model is not None
+
+    def _load(self) -> float:
+        """Load the model once. Returns the seconds this call spent."""
+        if self._model is not None:
+            return 0.0
+        missing = missing_dependencies()
+        if missing:
+            raise CoachSetupError(install_help(missing))
+        problem = model_problem()
+        if problem:
+            raise CoachSetupError(download_help(problem))
+        try:
+            import torch
+            from transformers import AutoModelForCausalLM, AutoTokenizer
+        except ImportError as error:
+            raise CoachSetupError(install_help([str(error)])) from error
+
+        started = time.perf_counter()
+        # local_files_only: never contact the Hub, even if files are missing.
+        tokenizer = AutoTokenizer.from_pretrained(
+            MODEL_DIR, local_files_only=True
+        )
+        model = AutoModelForCausalLM.from_pretrained(
+            MODEL_DIR, local_files_only=True, dtype=torch.float32
+        )
+        model.to(torch.device("cpu"))
+        model.eval()
+        # Greedy decoding. The model's own config asks for sampling
+        # (temperature 0.6 and so on). Neutral values on this loaded copy
+        # keep generate() from warning that they are ignored. Nothing is
+        # written to disk.
+        model.generation_config.do_sample = False
+        model.generation_config.temperature = 1.0
+        model.generation_config.top_p = 1.0
+        model.generation_config.top_k = 50
+        self._torch, self._tokenizer, self._model = torch, tokenizer, model
+        return time.perf_counter() - started
+
+    def generate(self, messages: list,
+                 max_new_tokens: int = DEFAULT_MAX_NEW_TOKENS) -> Generation:
+        """Generate one answer for chat messages (system / user turns)."""
+        if (isinstance(max_new_tokens, bool)
+                or not isinstance(max_new_tokens, int)
+                or not 1 <= max_new_tokens <= MAX_NEW_TOKENS_LIMIT):
+            raise ValueError(
+                f"max_new_tokens must be a whole number from 1 to "
+                f"{MAX_NEW_TOKENS_LIMIT}, got {max_new_tokens!r}."
+            )
+        if not messages or not all(
+            isinstance(message, dict)
+            and isinstance(message.get("role"), str)
+            and isinstance(message.get("content"), str)
+            for message in messages
+        ):
+            raise ValueError(
+                "messages must be a non-empty list of "
+                "{'role': ..., 'content': ...} dictionaries."
+            )
+
+        load_seconds = self._load()
+        torch, tokenizer, model = self._torch, self._tokenizer, self._model
+
+        # enable_thinking=False: Qwen3 answers directly, without <think>.
+        chat_text = tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True,
+            enable_thinking=False,
+        )
+        thinking_off = chat_text.endswith("<think>\n\n</think>\n\n")
+        inputs = tokenizer(chat_text, return_tensors="pt").to("cpu")
+
+        torch.manual_seed(0)
+        started = time.perf_counter()
+        with torch.inference_mode():
+            output_ids = model.generate(
+                **inputs, do_sample=False, max_new_tokens=max_new_tokens
+            )
+        generate_seconds = time.perf_counter() - started
+
+        prompt_length = inputs["input_ids"].shape[1]
+        new_ids = output_ids[0][prompt_length:]
+        return Generation(
+            text=tokenizer.decode(new_ids, skip_special_tokens=True).strip(),
+            raw_text=tokenizer.decode(new_ids, skip_special_tokens=False),
+            prompt_tokens=int(prompt_length),
+            generated_tokens=int(len(new_ids)),
+            max_new_tokens=max_new_tokens,
+            thinking_off=thinking_off,
+            load_seconds=round(load_seconds, 2),
+            generate_seconds=round(generate_seconds, 2),
+        )
+
+    def weights_on_cpu(self) -> bool:
+        return self.loaded and all(
+            parameter.device.type == "cpu"
+            for parameter in self._model.parameters()
+        )
+
+    def environment(self) -> dict:
+        """Library versions and device, for reports. Needs a loaded model."""
+        import huggingface_hub
+        import safetensors
+        import tokenizers
+        import transformers
+
+        torch = self._torch
+        return {
+            "python": platform.python_version(),
+            "platform": platform.platform(),
+            "machine": platform.machine(),
+            "torch": torch.__version__,
+            "transformers": transformers.__version__,
+            "huggingface_hub": huggingface_hub.__version__,
+            "tokenizers": tokenizers.__version__,
+            "safetensors": safetensors.__version__,
+            "device": "cpu",
+            "torch_threads": torch.get_num_threads(),
+            "HF_HUB_OFFLINE": os.environ.get("HF_HUB_OFFLINE"),
+        }
+
+
+@lru_cache(maxsize=1)
+def get_generator() -> LocalGenerator:
+    """The shared generator: the model is loaded at most once per process."""
+    return LocalGenerator()
+
+
 def smoke(prompt: str, max_new_tokens: int, output: str | None) -> int:
-    """Load the local model on the CPU and generate one short answer."""
+    """Generate one short answer with the local model and check it."""
     missing = missing_dependencies()
     if missing:
         print(install_help(missing), file=sys.stderr)
@@ -158,78 +343,33 @@ def smoke(prompt: str, max_new_tokens: int, output: str | None) -> int:
         print(download_help(problem), file=sys.stderr)
         return 2
 
-    try:
-        import huggingface_hub
-        import safetensors
-        import tokenizers
-        import torch
-        import transformers
-        from transformers import AutoModelForCausalLM, AutoTokenizer
-    except ImportError as error:
-        print(install_help([str(error)]), file=sys.stderr)
-        return 2
-
-    device = torch.device("cpu")
-    torch.manual_seed(0)
-
-    started = time.perf_counter()
-    # local_files_only: never contact the Hub, even if files are missing.
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_DIR, local_files_only=True)
-    model = AutoModelForCausalLM.from_pretrained(
-        MODEL_DIR, local_files_only=True, dtype=torch.float32
-    )
-    model.to(device)
-    model.eval()
-    load_seconds = time.perf_counter() - started
-
+    generator = get_generator()
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": prompt},
     ]
-    # enable_thinking=False: Qwen3 answers directly, without a <think> part.
-    chat_text = tokenizer.apply_chat_template(
-        messages,
-        tokenize=False,
-        add_generation_prompt=True,
-        enable_thinking=False,
-    )
-    thinking_off = chat_text.endswith("<think>\n\n</think>\n\n")
-    inputs = tokenizer(chat_text, return_tensors="pt").to(device)
-
-    # Greedy decoding with a hard length limit, so the check is repeatable.
-    # The model's own config asks for sampling (temperature 0.6 and so on).
-    # Neutral values on this loaded copy keep generate() from warning that
-    # those sampling settings are ignored. Nothing is written to disk.
-    model.generation_config.do_sample = False
-    model.generation_config.temperature = 1.0
-    model.generation_config.top_p = 1.0
-    model.generation_config.top_k = 50
-
-    started = time.perf_counter()
-    with torch.inference_mode():
-        output_ids = model.generate(
-            **inputs, do_sample=False, max_new_tokens=max_new_tokens
-        )
-    generate_seconds = time.perf_counter() - started
-
-    new_ids = output_ids[0][inputs["input_ids"].shape[1]:]
-    answer = tokenizer.decode(new_ids, skip_special_tokens=True).strip()
-    raw_answer = tokenizer.decode(new_ids, skip_special_tokens=False)
+    try:
+        result = generator.generate(messages, max_new_tokens)
+    except CoachSetupError as error:
+        print(error, file=sys.stderr)
+        return 2
+    environment = generator.environment()
+    answer = result.text
 
     checks = [
         {"check": "answer is not empty", "passed": bool(answer)},
         {
             "check": "chat template turned thinking off",
-            "passed": thinking_off,
+            "passed": result.thinking_off,
         },
         {
             "check": "no thinking block in the answer",
-            "passed": "<think>" not in raw_answer
-            and "</think>" not in raw_answer,
+            "passed": "<think>" not in result.raw_text
+            and "</think>" not in result.raw_text,
         },
         {
             "check": f"at most {max_new_tokens} new tokens",
-            "passed": len(new_ids) <= max_new_tokens,
+            "passed": result.generated_tokens <= max_new_tokens,
         },
         {
             "check": "answer is in Latin letters (simple English check)",
@@ -237,7 +377,7 @@ def smoke(prompt: str, max_new_tokens: int, output: str | None) -> int:
         },
         {
             "check": "all model weights are on the CPU",
-            "passed": all(p.device.type == "cpu" for p in model.parameters()),
+            "passed": generator.weights_on_cpu(),
         },
         {
             "check": "local files match the pinned revision",
@@ -253,19 +393,7 @@ def smoke(prompt: str, max_new_tokens: int, output: str | None) -> int:
             "local_dir": relative(MODEL_DIR),
             "dtype": "float32",
         },
-        "environment": {
-            "python": platform.python_version(),
-            "platform": platform.platform(),
-            "machine": platform.machine(),
-            "torch": torch.__version__,
-            "transformers": transformers.__version__,
-            "huggingface_hub": huggingface_hub.__version__,
-            "tokenizers": tokenizers.__version__,
-            "safetensors": safetensors.__version__,
-            "device": str(device),
-            "torch_threads": torch.get_num_threads(),
-            "HF_HUB_OFFLINE": os.environ.get("HF_HUB_OFFLINE"),
-        },
+        "environment": environment,
         "generation": {
             "local_files_only": True,
             "inference_mode": True,
@@ -275,25 +403,25 @@ def smoke(prompt: str, max_new_tokens: int, output: str | None) -> int:
         },
         "prompt": {"system": SYSTEM_PROMPT, "user": prompt},
         "answer": answer,
-        "generated_tokens": int(len(new_ids)),
+        "generated_tokens": result.generated_tokens,
         "seconds": {
-            "load": round(load_seconds, 2),
-            "generate": round(generate_seconds, 2),
+            "load": result.load_seconds,
+            "generate": result.generate_seconds,
         },
         "checks": checks,
         "result": "PASS" if passed else "FAIL",
     }
 
     print(f"model:    {MODEL_ID} @ {MODEL_REVISION}")
-    print(f"device:   {device} (float32), torch {torch.__version__}, "
-          f"transformers {transformers.__version__}")
-    print(f"offline:  HF_HUB_OFFLINE={os.environ.get('HF_HUB_OFFLINE')}")
+    print(f"device:   cpu (float32), torch {environment['torch']}, "
+          f"transformers {environment['transformers']}")
+    print(f"offline:  HF_HUB_OFFLINE={environment['HF_HUB_OFFLINE']}")
     print(f"prompt:   {prompt}")
     print(f"answer:   {answer}")
-    print(f"tokens:   {len(new_ids)} of max {max_new_tokens}")
+    print(f"tokens:   {result.generated_tokens} of max {max_new_tokens}")
     print(
-        f"seconds:  load {load_seconds:.2f}, "
-        f"generate {generate_seconds:.2f}"
+        f"seconds:  load {result.load_seconds:.2f}, "
+        f"generate {result.generate_seconds:.2f}"
     )
     for item in checks:
         mark = "ok" if item["passed"] else "FAIL"

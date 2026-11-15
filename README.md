@@ -13,14 +13,13 @@ every round of the duel is checked by an independent inspector before the
 new game state is saved.
 
 > **Where AI is and is not used:** the game itself uses no AI model;
-> Vector is a plain algorithm. Separately, the repository has two
-> command-line tools for a future Strategy Coach: one runs a small
-> pretrained language model (Qwen3-0.6B) locally on the CPU, and one
-> searches the game's own knowledge files with BM25. These tools are not
-> connected to each other, to the app or to the game engine yet, so there
-> is no full RAG pipeline and no Coach in the interface. No external AI
-> inference API is used, and no model was trained or fine-tuned. The Solo
-> game does not go through the duel inspector.
+> Vector is a plain algorithm. Separately, the repository has a Strategy
+> Coach prototype on the command line (`coach.py`): it searches the game's
+> own knowledge files with BM25 and gives the found sections to a small
+> pretrained language model (Qwen3-0.6B) that runs locally on the CPU. The
+> Coach is not connected to the Streamlit app or to the game engine yet.
+> No external AI inference API is used, and no model was trained or
+> fine-tuned. The Solo game does not go through the duel inspector.
 
 ## Contents
 
@@ -33,7 +32,7 @@ new game state is saved.
 - [Setup](#setup)
 - [Running the app, tests and evaluation](#running-the-app-tests-and-evaluation)
 - [Evaluation](#evaluation)
-- [Local model and knowledge search](#local-model-and-knowledge-search)
+- [Strategy Coach prototype (CLI)](#strategy-coach-prototype-cli)
 - [Design decisions and trade-offs](#design-decisions-and-trade-offs)
 - [Results and limits of testing](#results-and-limits-of-testing)
 - [Known limitations](#known-limitations)
@@ -167,8 +166,9 @@ When a round is rejected:
 | `guardrails.py` | Independent inspector `validate_transition` |
 | `duel_service.py` | `safe_play_round`, `GuardrailViolation`, logging |
 | `evaluate.py` | Reproducible evaluation of six duel scenarios |
-| `coach_model.py` | Separate CLI: download the pinned Qwen3-0.6B model, run a local CPU check |
-| `coach_retrieval.py` | Separate CLI: BM25 search over `knowledge/*.md` |
+| `coach_model.py` | Local model: download the pinned Qwen3-0.6B, `LocalGenerator` for CPU generation, `smoke` check |
+| `coach_retrieval.py` | BM25 search over `knowledge/*.md` |
+| `coach.py` | Strategy Coach CLI prototype: search → local model → answer with source IDs |
 | `knowledge/*.md` | The game's own knowledge files, 22 sections with stable IDs |
 
 Mermaid source: [diagrams/architecture.mmd](diagrams/architecture.mmd)
@@ -177,9 +177,9 @@ Mermaid source: [diagrams/architecture.mmd](diagrams/architecture.mmd)
 flowchart TD
     %% Number Duel: architecture of the actual implementation.
     %% README.md shows the same diagram so GitHub can render it.
-    %% The local model and the retrieval tools are separate command-line
-    %% tools. They are not connected to each other, to the app or to the
-    %% game engine yet.
+    %% coach.py connects the knowledge search to the local model on the
+    %% command line. The coach is not connected to the Streamlit app or to
+    %% the game engine yet.
 
     player(["Player<br/>(web browser)"])
     app["app.py<br/>set_page_config + st.navigation"]
@@ -237,22 +237,23 @@ flowchart TD
     evaluate --> report
     fault -.->|"replaces play_round<br/>in guardrail-blocked"| service
 
-    subgraph model_tool["Local model CLI (coach_model.py, separate)"]
+    subgraph model_tool["Local model (coach_model.py)"]
         download_cmd["coach_model.py download"]
         hub[("Hugging Face Hub<br/>Qwen/Qwen3-0.6B<br/>pinned revision c1899de")]
         weights[("models/Qwen3-0.6B<br/>local weights, git-ignored")]
-        smoke_cmd["coach_model.py smoke<br/>prompt + local weights"]
-        cpu["Transformers + PyTorch<br/>CPU generation, thinking off,<br/>limited answer length"]
-        answer["answer on screen<br/>+ optional JSON report"]
+        smoke_cmd["coach_model.py smoke<br/>one fixed prompt"]
+        generator["LocalGenerator<br/>Transformers + PyTorch on CPU,<br/>loaded lazily once, thinking off,<br/>greedy, token limit"]
+        smoke_out["smoke answer and checks<br/>+ optional JSON report"]
     end
 
     download_cmd -->|"network needed only here"| hub
     hub -->|"snapshot_download"| weights
-    smoke_cmd --> cpu
-    weights -->|"local files only, no network"| cpu
-    cpu --> answer
+    weights -->|"local files only, no network"| generator
+    smoke_cmd -->|"generate"| generator
+    generator -->|"text, token counts"| smoke_cmd
+    smoke_cmd --> smoke_out
 
-    subgraph retrieval_tool["Knowledge search CLI (coach_retrieval.py, separate)"]
+    subgraph retrieval_tool["Knowledge search (coach_retrieval.py)"]
         knowledge[("knowledge/*.md<br/>rules, strategy, reliability<br/>22 sections with source_id")]
         bm25["BM25 index<br/>(Python standard library)"]
         query_cmd["coach_retrieval.py<br/>--query --top-k"]
@@ -263,12 +264,30 @@ flowchart TD
     query_cmd -->|"search"| bm25
     bm25 --> found
 
+    subgraph coach_tool["RAG Coach CLI prototype (coach.py), not in the app"]
+        coach_cli["coach.py --question<br/>ask_coach()"]
+        abstain["abstained: no section found<br/>program rule, model not called"]
+        citation_check["citation check: at least one<br/>[source_id], all IDs from the<br/>found sections (IDs only)"]
+        coach_out["answer, sources, status<br/>+ optional JSON report"]
+    end
+
+    coach_cli -->|"1. search, top 3"| bm25
+    bm25 -->|"sections: source_id,<br/>text, score"| coach_cli
+    coach_cli -->|"no section found"| abstain
+    coach_cli -->|"2. question + found sections<br/>(--no-retrieval: question only)"| generator
+    generator -->|"raw answer"| coach_cli
+    coach_cli -->|"with retrieval"| citation_check
+    citation_check -->|"answered or<br/>validation_failed"| coach_out
+    coach_cli -->|"--no-retrieval:<br/>answer without retrieval"| coach_out
+    abstain --> coach_out
+
     tests["tests/ (pytest)"]
     tests -.->|"unit tests"| core
     tests -.->|"AppTest UI tests"| pages
     tests -.->|"CLI test"| evaluate
     tests -.->|"unit tests,<br/>no real model"| model_tool
     tests -.->|"unit and CLI tests"| retrieval_tool
+    tests -.->|"unit tests,<br/>generation replaced"| coach_tool
 ```
 
 ## Setup
@@ -412,12 +431,38 @@ passed: 1  failed: 0  total: 1
 [exit code: 0]
 ```
 
-## Local model and knowledge search
+## Strategy Coach prototype (CLI)
 
-These are two separate command-line tools, prepared for a future Strategy
-Coach. They do not change the game, and the game does not need them. They
-are not connected to each other yet: there is no full RAG pipeline and no
-Coach in the interface.
+The Strategy Coach answers questions about the game on the command line.
+It is a working prototype: question → knowledge search → local model →
+answer with source IDs. It does not change the game, the game does not
+need it, and it is not connected to the Streamlit app yet. There is no
+match analysis and no few-shot specialization yet.
+
+**Coach (`coach.py`)**
+
+- `ask_coach()` is the function for callers; the CLI uses it, and the app
+  could call it later.
+- **With retrieval** (default): it finds up to three sections and gives
+  the model the question together with the full text and `source_id` of
+  each section. It asks for a short English answer that cites sources like
+  `[reliability-midpoint-not-required]`. The answer must cite at least one
+  source, and every cited ID must be one of the found sections; otherwise
+  the status is `validation_failed` and the raw answer is kept unchanged.
+  This check only covers the IDs, not whether each sentence is true.
+- **No match**: if the search finds nothing, the status is `abstained` and
+  the model is not called. This refusal is a rule of the program, not an
+  answer from the model.
+- **`--no-retrieval`** (baseline): skips the search and the knowledge
+  files, but calls the same model with the same instructions and settings.
+  Only the found sources are missing, so a missing citation is not an
+  error; the status is `answered_without_retrieval`.
+- The real runs are saved in [artifacts/rag_smoke.json](artifacts/rag_smoke.json):
+  for the midpoint question, the answer with retrieval cited only found
+  sections (status `answered`), but its last sentence starts with a
+  contradicting "Yes". Without retrieval, the answer was vague and cited an
+  invented "[Source: Game Rules]". The bread question was refused
+  (`abstained`). These three runs are smoke checks, not an evaluation.
 
 **Local model (`coach_model.py`)**
 
@@ -427,10 +472,14 @@ Coach in the interface.
   fine-tuned in this project.
 - `download` is the only command that uses the network. It saves the model
   (about 1.5 GB) to `models/Qwen3-0.6B`, which Git ignores.
-- `smoke` reads only local files and generates one short answer on the CPU
-  with Transformers and PyTorch: `model.eval()`, `torch.inference_mode()`,
-  thinking turned off, greedy decoding and at most 64 new tokens by
-  default. It can save a JSON report with `--output`.
+- `LocalGenerator` (shared through `get_generator()`) loads the model
+  lazily, once, reads only local files and generates on the CPU with
+  Transformers and PyTorch: `model.eval()`, `torch.inference_mode()`,
+  thinking turned off and greedy decoding. It never downloads or prints
+  anything. Importing the module does not import torch.
+- `smoke` uses the same generator for one short answer (at most 64 new
+  tokens by default) and can save a JSON report with `--output`. The coach
+  uses at most 128 new tokens.
 - If the dependencies or the model are missing, both commands print what
   to install or run.
 - The saved check [artifacts/local_model_smoke.json](artifacts/local_model_smoke.json)
@@ -460,6 +509,12 @@ python coach_model.py smoke
 
 # Search the game's knowledge files
 python coach_retrieval.py --query "What happens if both players guess correctly?" --top-k 3
+
+# Ask the coach (search + local model)
+python coach.py --question "Must the inspector require Vector to guess the exact midpoint?"
+
+# The same question without retrieval (baseline)
+python coach.py --question "Must the inspector require Vector to guess the exact midpoint?" --no-retrieval
 ```
 
 The coach tools were checked only on macOS 26.6.1 (arm64) with Python
@@ -497,12 +552,18 @@ Linux are not verified yet.
   library is easy to test and explain. The trade-off is that it matches
   words, not meaning, so a question worded differently can miss the right
   section.
+- **The coach refuses instead of guessing.** With no matching section,
+  the model is not called at all. The trade-off is that a question worded
+  differently from the knowledge files can be refused.
+- **Checked citations, kept answers.** The coach checks the cited source
+  IDs and keeps the model's answer unchanged, even when the check fails.
+  It never adds or fixes citations itself.
 
 ## Results and limits of testing
 
 Last confirmed results, on Python 3.13.15 with Streamlit 1.60.0:
 
-- **143 automated tests passed** (`python -m pytest -q`);
+- **153 automated tests passed** (`python -m pytest -q`);
 - **6 of 6 evaluation scenarios passed** (`python evaluate.py`).
 
 These are two different measures, and neither is a guarantee that the app
@@ -520,9 +581,12 @@ What the tests cover:
 - the evaluation script through a real command-line run, including a
   check that two runs give the same JSON;
 - the coach tools: messages for missing dependencies or a missing model,
-  the pinned model revision, and the knowledge search (expected sources,
-  empty and unrelated queries, `top_k`, stable order, duplicate IDs).
-  These tests do not load the real model.
+  the pinned model revision, the knowledge search (expected sources,
+  empty and unrelated queries, `top_k`, stable order, duplicate IDs), and
+  the coach (found texts and IDs reach the model, unknown or missing
+  citations are blocked, no match does not call the model, the baseline
+  skips the search). These tests replace the model with a fake and never
+  load the real one.
 
 Limits of this testing:
 
@@ -533,8 +597,8 @@ Limits of this testing:
   automated visual tests;
 - only Python 3.13.15 and Streamlit 1.60.0 were tested. Streamlit 1.36 is
   the declared minimum, but it was not tested;
-- the real local model is checked only by `coach_model.py smoke` runs,
-  which are not part of pytest;
+- the real local model is checked only by `coach_model.py smoke` and
+  `coach.py` runs, which are not part of pytest;
 - there are no load or multi-user tests.
 
 ## Known limitations
@@ -556,12 +620,14 @@ Limits of this testing:
 - **Solo is not inspected.** Only duel rounds go through the inspector.
 - **Solo scoring keeps a rule from the base project:** a "Too High" guess
   on an even attempt adds 5 points instead of taking 5 away.
-- **The coach tools are not connected yet.** The local model and the
-  knowledge search only work as separate command-line tools. The app and
-  the game engine do not use them, and there is no Coach in the interface.
+- **The Coach is a command-line prototype.** The app and the game engine
+  do not use it, and there is no Coach in the interface yet.
 - **The local model is small.** Qwen3-0.6B can give wrong or incomplete
-  answers. The smoke check only shows that it runs locally and gives a
-  short English answer; it does not check that answers are correct.
+  answers, even with retrieval: in the saved run, the answer cited valid
+  sources but also contained a contradicting sentence. The smoke check only
+  shows that the model runs locally and gives a short English answer.
+- **The citation check covers IDs only.** A cited ID must be one of the
+  found sections, but the check cannot tell whether a sentence is true.
 - **The knowledge search matches words, not meaning.**
 
 ## Project structure
@@ -577,8 +643,9 @@ duel_logic.py          duel state, create_duel, play_round
 guardrails.py          independent inspector validate_transition
 duel_service.py        safe_play_round, GuardrailViolation, logging
 evaluate.py            reproducible evaluation script
-coach_model.py         separate CLI: local model download and CPU check
-coach_retrieval.py     separate CLI: BM25 search over knowledge files
+coach.py               Strategy Coach CLI prototype (search + local model)
+coach_model.py         local model: download, LocalGenerator, smoke check
+coach_retrieval.py     BM25 search over the knowledge files
 knowledge/             the game's knowledge files (22 sections)
 requirements-coach.txt optional dependencies for the coach tools
 models/                downloaded model weights (git-ignored)

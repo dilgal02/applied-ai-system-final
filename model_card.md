@@ -5,12 +5,13 @@
 | System | Number Duel, a Streamlit app with a Solo Game and a Number Duel page |
 | Opponent | Vector, a deterministic binary-search algorithm (`bot_agent.py`) |
 | Machine learning in the game | None: Vector is a plain algorithm, and the game uses no model |
-| Separate local model | Qwen/Qwen3-0.6B, a small pretrained language model (pinned revision `c1899de`), run on the CPU by a separate CLI (`coach_model.py`); not connected to the game |
-| Separate retrieval | BM25 keyword search over 22 sections of `knowledge/*.md` (`coach_retrieval.py`); not connected to the model or the game |
-| Not used | No training or fine-tuning, no external AI inference API, no full RAG pipeline, no Coach in the interface |
+| Local model | Qwen/Qwen3-0.6B, a small pretrained language model (pinned revision `c1899de`), run on the CPU by `coach_model.py`; used by the Coach CLI, not by the game |
+| Retrieval | BM25 keyword search over 22 sections of `knowledge/*.md` (`coach_retrieval.py`) |
+| Strategy Coach | CLI prototype `coach.py`: question → knowledge search → local model → answer with checked source IDs; not connected to the Streamlit app |
+| Not used | No training or fine-tuning, no external AI inference API, no Coach in the interface, no few-shot specialization |
 | Advanced feature | A built-in reliability system that checks every duel step before it is saved |
 | Tested environment | Python 3.13.15, Streamlit 1.60.0; coach tools on macOS arm64 with torch 2.15.0 and transformers 5.23.0, CPU only |
-| Last confirmed results | 143 automated tests passed; 6 of 6 evaluation scenarios passed |
+| Last confirmed results | 153 automated tests passed; 6 of 6 evaluation scenarios passed |
 
 ## Purpose and intended use
 
@@ -40,8 +41,9 @@ any decision about real people.
 
 The Solo game does not go through the inspector.
 
-Two separate command-line tools, a local language model and a knowledge
-search, are described below. They are not part of the game flow.
+The Strategy Coach prototype and its two parts, a local language model and
+a knowledge search, are command-line tools described below. They are not
+part of the game flow.
 
 ## No training; where a language model is used
 
@@ -50,11 +52,10 @@ Nothing in this project is trained or fine-tuned. Vector does not "think":
 and `update_bounds` narrows that range after each hint. The same inputs
 always give the same moves. The game does not use a language model.
 
-A separate command-line tool, `coach_model.py`, downloads a small
-pretrained language model (Qwen3-0.6B) and runs it locally on the CPU. The
-game does not call it. The knowledge search exists as another separate
-tool and is not connected to the model yet, so there is no full RAG
-pipeline. The project does not call any external AI inference API.
+`coach_model.py` downloads a small pretrained language model (Qwen3-0.6B)
+and runs it locally on the CPU. The Coach prototype (`coach.py`) gives it
+the sections found by the knowledge search. The game does not call either
+of them. The project does not call any external AI inference API.
 
 ## Algorithmic limits and how predictable Vector is
 
@@ -97,12 +98,14 @@ Limits:
 - the scenarios test the game core, not the browser page;
 - the tests and the evaluation were written with help from the same AI
   agent that helped write the code, so they may share blind spots with it;
-- the 143 passing tests and the 6 passing scenarios are separate measures.
+- the 153 passing tests and the 6 passing scenarios are separate measures.
   Neither proves that the app has no bugs.
 
 ## Local language model (separate CLI)
 
-`coach_model.py` prepares a local backend for a future Strategy Coach.
+`coach_model.py` is the local backend of the Strategy Coach. Its
+`LocalGenerator` loads the model lazily, once, and is shared by the
+`smoke` check and the Coach.
 
 - **Model:** Qwen/Qwen3-0.6B (Apache-2.0 license), a small pretrained
   model, pinned to revision `c1899de289a04d12100db370d81485cdf75e47ca`.
@@ -122,7 +125,7 @@ Limits: the model is small and can give wrong or incomplete answers. The
 smoke check only shows that the model runs locally and answers in short
 English; it does not check that answers are correct. Only macOS 26.6.1 on
 arm64 was verified; Windows and Linux are not verified yet. The model is
-not connected to the game or to the knowledge search.
+used by the Coach CLI, not by the game.
 
 ## Knowledge retrieval (separate CLI)
 
@@ -136,8 +139,43 @@ The score shows how well the words of a question match a section. It is
 not the confidence of a model. Limits: the search matches words, not
 meaning, so a question worded differently can miss the right section. The
 knowledge files were written by hand from the current code and must be
-updated when the rules change. The search is not connected to the model,
-the app or the game engine yet.
+updated when the rules change. The Coach CLI uses this search; the app
+and the game engine do not.
+
+## Strategy Coach prototype (CLI)
+
+`coach.py` answers a question about the game: it searches the knowledge
+files (up to three sections), gives the model the question with the full
+text and `source_id` of each section, and asks for a short English answer
+that cites sources like `[reliability-midpoint-not-required]`.
+
+- **Citation check**: the answer must cite at least one source, and every
+  cited ID must be one of the found sections. If not, the status is
+  `validation_failed` and the raw answer is kept unchanged; the coach never
+  adds or fixes citations. The check only covers the IDs, not whether each
+  sentence is true.
+- **Abstaining**: if the search finds nothing, the status is `abstained`
+  and the model is not called. This refusal is a rule of the program, not
+  an answer from the model.
+- **Baseline**: `--no-retrieval` skips the search and calls the same model
+  with the same instructions and settings, without sources. Its status is
+  `answered_without_retrieval`.
+
+Three real runs are saved in [artifacts/rag_smoke.json](artifacts/rag_smoke.json),
+all with `HF_HUB_OFFLINE=1`:
+
+- with retrieval, the midpoint question found
+  `reliability-midpoint-not-required` first. The answer said the inspector
+  does not require the exact midpoint and cited only found sources
+  (`answered`), but its last sentence starts with a contradicting "Yes";
+- without retrieval, the same question got a vague answer ("the
+  requirement depends on the game's specific rules") with an invented
+  "[Source: Game Rules]";
+- "How do I bake sourdough bread?" found no section and was refused
+  (`abstained`) without calling the model.
+
+These are three smoke runs, not an evaluation. They do not show whether
+retrieval makes answers better or worse in general.
 
 ## State, data and privacy
 
@@ -164,7 +202,7 @@ the app or the game engine yet.
 | Bad input (empty, text, fractions, numbers out of range) | The page shows a clear message and the round is not used up | — |
 | A broken or changed engine result (wrong hint, changed secret or setting, extra round, false status) | The inspector rejects it, the player sees a general message, the old state is kept | It does not protect against someone who changes both the engine and the inspector |
 | Trusting Vector as "AI" | The README and this card state that Vector is a plain algorithm | — |
-| Trusting the local model's answers | The model is not connected to the game, so it cannot change any game state; its limits are documented | It does not check whether an answer is correct |
+| Trusting the local model's answers | The model is not connected to the game, so it cannot change any game state; the Coach checks cited source IDs and refuses questions with no matching section | It does not check whether an answer is correct |
 
 ## Testing: what surprised me
 

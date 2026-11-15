@@ -1,9 +1,9 @@
 flowchart TD
     %% Number Duel: architecture of the actual implementation.
     %% README.md shows the same diagram so GitHub can render it.
-    %% The local model and the retrieval tools are separate command-line
-    %% tools. They are not connected to each other, to the app or to the
-    %% game engine yet.
+    %% coach.py connects the knowledge search to the local model on the
+    %% command line. The coach is not connected to the Streamlit app or to
+    %% the game engine yet.
 
     player(["Player<br/>(web browser)"])
     app["app.py<br/>set_page_config + st.navigation"]
@@ -61,22 +61,23 @@ flowchart TD
     evaluate --> report
     fault -.->|"replaces play_round<br/>in guardrail-blocked"| service
 
-    subgraph model_tool["Local model CLI (coach_model.py, separate)"]
+    subgraph model_tool["Local model (coach_model.py)"]
         download_cmd["coach_model.py download"]
         hub[("Hugging Face Hub<br/>Qwen/Qwen3-0.6B<br/>pinned revision c1899de")]
         weights[("models/Qwen3-0.6B<br/>local weights, git-ignored")]
-        smoke_cmd["coach_model.py smoke<br/>prompt + local weights"]
-        cpu["Transformers + PyTorch<br/>CPU generation, thinking off,<br/>limited answer length"]
-        answer["answer on screen<br/>+ optional JSON report"]
+        smoke_cmd["coach_model.py smoke<br/>one fixed prompt"]
+        generator["LocalGenerator<br/>Transformers + PyTorch on CPU,<br/>loaded lazily once, thinking off,<br/>greedy, token limit"]
+        smoke_out["smoke answer and checks<br/>+ optional JSON report"]
     end
 
     download_cmd -->|"network needed only here"| hub
     hub -->|"snapshot_download"| weights
-    smoke_cmd --> cpu
-    weights -->|"local files only, no network"| cpu
-    cpu --> answer
+    weights -->|"local files only, no network"| generator
+    smoke_cmd -->|"generate"| generator
+    generator -->|"text, token counts"| smoke_cmd
+    smoke_cmd --> smoke_out
 
-    subgraph retrieval_tool["Knowledge search CLI (coach_retrieval.py, separate)"]
+    subgraph retrieval_tool["Knowledge search (coach_retrieval.py)"]
         knowledge[("knowledge/*.md<br/>rules, strategy, reliability<br/>22 sections with source_id")]
         bm25["BM25 index<br/>(Python standard library)"]
         query_cmd["coach_retrieval.py<br/>--query --top-k"]
@@ -87,9 +88,27 @@ flowchart TD
     query_cmd -->|"search"| bm25
     bm25 --> found
 
+    subgraph coach_tool["RAG Coach CLI prototype (coach.py), not in the app"]
+        coach_cli["coach.py --question<br/>ask_coach()"]
+        abstain["abstained: no section found<br/>program rule, model not called"]
+        citation_check["citation check: at least one<br/>[source_id], all IDs from the<br/>found sections (IDs only)"]
+        coach_out["answer, sources, status<br/>+ optional JSON report"]
+    end
+
+    coach_cli -->|"1. search, top 3"| bm25
+    bm25 -->|"sections: source_id,<br/>text, score"| coach_cli
+    coach_cli -->|"no section found"| abstain
+    coach_cli -->|"2. question + found sections<br/>(--no-retrieval: question only)"| generator
+    generator -->|"raw answer"| coach_cli
+    coach_cli -->|"with retrieval"| citation_check
+    citation_check -->|"answered or<br/>validation_failed"| coach_out
+    coach_cli -->|"--no-retrieval:<br/>answer without retrieval"| coach_out
+    abstain --> coach_out
+
     tests["tests/ (pytest)"]
     tests -.->|"unit tests"| core
     tests -.->|"AppTest UI tests"| pages
     tests -.->|"CLI test"| evaluate
     tests -.->|"unit tests,<br/>no real model"| model_tool
     tests -.->|"unit and CLI tests"| retrieval_tool
+    tests -.->|"unit tests,<br/>generation replaced"| coach_tool

@@ -1,0 +1,197 @@
+{
+  "description": "Real runs of coach.py with HF_HUB_OFFLINE=1: one question with retrieval, the same question without retrieval, and a question with no matching knowledge.",
+  "notes": [
+    "Each case was one separate command. Its report was written with --output to a temporary file and is copied here unchanged.",
+    "The citation check only checks source IDs, not whether each sentence of an answer is true.",
+    "These are three smoke runs, not an evaluation. They do not show whether retrieval makes answers better or worse."
+  ],
+  "cases": [
+    {
+      "name": "rag",
+      "command": "HF_HUB_OFFLINE=1 .venv/bin/python coach.py --question 'Must the inspector require Vector to guess the exact midpoint?'",
+      "exit_code": 0,
+      "question": "Must the inspector require Vector to guess the exact midpoint?",
+      "mode": "rag",
+      "status": "answered",
+      "answer": "The inspector does not require Vector to guess the exact midpoint; instead, they check that Vector's guesses lie within the range that is still possible at that moment. [reliability-midpoint-not-required]  \n\nThis strategy stays inside the range and passes the inspector regardless of whether the guess is the exact midpoint or not. [reliability-inspector-checks]  \n\nYes, the inspector checks Vector's guesses to ensure they are within the range, not necessarily requiring them to be the exact midpoint. [reliability-inspector-checks]",
+      "sources": [
+        {
+          "source_id": "reliability-midpoint-not-required",
+          "path": "knowledge/reliability.md",
+          "title": "Exact middle not required",
+          "score": 9.434,
+          "text": "The inspector checks that each of Vector's guesses lies inside the range\nthat is still possible at that moment. It does not require the guess to be\nexactly the middle of that range. Another strategy that stays inside the\nrange would also pass the inspector."
+        },
+        {
+          "source_id": "reliability-inspector-checks",
+          "path": "knowledge/reliability.md",
+          "title": "What the inspector checks",
+          "score": 4.436,
+          "text": "The inspector checks that the duel was still running and had rounds left,\nthat the settings and both secret numbers did not change, that exactly one\nround was added and earlier rounds stayed the same, that both guesses are\nwhole numbers inside the range, that both hints match the secret numbers,\nthat Vector's range matches its whole history, and that the status\n(playing, win or draw) is correct."
+        },
+        {
+          "source_id": "strategy-your-guesses",
+          "path": "knowledge/strategy.md",
+          "title": "Guessing Vector's number yourself",
+          "score": 2.846,
+          "text": "The fastest safe way to find Vector's number is the same method: guess the\nmiddle of the numbers that are still possible and use each hint to cut the\nrange in half. With this method you also need at most 5 guesses on Easy,\n7 on Normal and 6 on Hard. On Easy and Normal Vector always finds your\nnumber within the limit, so to win you must guess its number in an\nearlier round than it guesses yours. Guessing in the same round gives a\ndraw."
+        }
+      ],
+      "messages": [
+        {
+          "role": "system",
+          "content": "You are the Strategy Coach for the game Number Duel. Answer the player's question in English in at most three short sentences. If sources are given, use only those sources and cite each source you use by writing its ID in square brackets, exactly as it is written in the source list. If you are not sure, say so."
+        },
+        {
+          "role": "user",
+          "content": "Sources:\n\n[reliability-midpoint-not-required] Exact middle not required\nThe inspector checks that each of Vector's guesses lies inside the range\nthat is still possible at that moment. It does not require the guess to be\nexactly the middle of that range. Another strategy that stays inside the\nrange would also pass the inspector.\n\n[reliability-inspector-checks] What the inspector checks\nThe inspector checks that the duel was still running and had rounds left,\nthat the settings and both secret numbers did not change, that exactly one\nround was added and earlier rounds stayed the same, that both guesses are\nwhole numbers inside the range, that both hints match the secret numbers,\nthat Vector's range matches its whole history, and that the status\n(playing, win or draw) is correct.\n\n[strategy-your-guesses] Guessing Vector's number yourself\nThe fastest safe way to find Vector's number is the same method: guess the\nmiddle of the numbers that are still possible and use each hint to cut the\nrange in half. With this method you also need at most 5 guesses on Easy,\n7 on Normal and 6 on Hard. On Easy and Normal Vector always finds your\nnumber within the limit, so to win you must guess its number in an\nearlier round than it guesses yours. Guessing in the same round gives a\ndraw.\n\nQuestion: Must the inspector require Vector to guess the exact midpoint?"
+        }
+      ],
+      "citations": [
+        "reliability-midpoint-not-required",
+        "reliability-inspector-checks",
+        "reliability-inspector-checks"
+      ],
+      "checks": [
+        {
+          "check": "answer is not empty",
+          "passed": true
+        },
+        {
+          "check": "no thinking block in the answer",
+          "passed": true
+        },
+        {
+          "check": "answer cites at least one source",
+          "passed": true
+        },
+        {
+          "check": "every cited ID is one of the found sources",
+          "passed": true,
+          "unknown_ids": []
+        }
+      ],
+      "generator_called": true,
+      "generation": {
+        "model": "Qwen/Qwen3-0.6B",
+        "revision": "c1899de289a04d12100db370d81485cdf75e47ca",
+        "device": "cpu",
+        "dtype": "float32",
+        "local_files_only": true,
+        "inference_mode": true,
+        "enable_thinking": false,
+        "do_sample": false,
+        "max_new_tokens": 128,
+        "prompt_tokens": 381,
+        "generated_tokens": 111,
+        "thinking_off": true,
+        "seconds": {
+          "load": 3.11,
+          "generate": 8.38
+        }
+      },
+      "environment": {
+        "python": "3.13.15",
+        "platform": "macOS-26.6.1-arm64-arm-64bit-Mach-O",
+        "machine": "arm64",
+        "torch": "2.15.0",
+        "transformers": "5.23.0",
+        "huggingface_hub": "2.4.0",
+        "tokenizers": "0.23.3",
+        "safetensors": "0.8.0",
+        "device": "cpu",
+        "torch_threads": 4,
+        "HF_HUB_OFFLINE": "1"
+      },
+      "note": "The citation check only checks the source IDs, not whether each sentence of the answer is true."
+    },
+    {
+      "name": "no_retrieval",
+      "command": "HF_HUB_OFFLINE=1 .venv/bin/python coach.py --question 'Must the inspector require Vector to guess the exact midpoint?' --no-retrieval",
+      "exit_code": 0,
+      "question": "Must the inspector require Vector to guess the exact midpoint?",
+      "mode": "no_retrieval",
+      "status": "answered_without_retrieval",
+      "answer": "The inspector does not require Vector to guess the exact midpoint; the requirement depends on the game's specific rules and the context of the duel. If the game's rules specify that Vector must guess the midpoint, then the answer is yes. If not, the answer is no. [Source: Game Rules]",
+      "sources": [],
+      "messages": [
+        {
+          "role": "system",
+          "content": "You are the Strategy Coach for the game Number Duel. Answer the player's question in English in at most three short sentences. If sources are given, use only those sources and cite each source you use by writing its ID in square brackets, exactly as it is written in the source list. If you are not sure, say so."
+        },
+        {
+          "role": "user",
+          "content": "Question: Must the inspector require Vector to guess the exact midpoint?"
+        }
+      ],
+      "citations": [
+        "Source: Game Rules"
+      ],
+      "checks": [
+        {
+          "check": "answer is not empty",
+          "passed": true
+        },
+        {
+          "check": "no thinking block in the answer",
+          "passed": true
+        }
+      ],
+      "generator_called": true,
+      "generation": {
+        "model": "Qwen/Qwen3-0.6B",
+        "revision": "c1899de289a04d12100db370d81485cdf75e47ca",
+        "device": "cpu",
+        "dtype": "float32",
+        "local_files_only": true,
+        "inference_mode": true,
+        "enable_thinking": false,
+        "do_sample": false,
+        "max_new_tokens": 128,
+        "prompt_tokens": 97,
+        "generated_tokens": 62,
+        "thinking_off": true,
+        "seconds": {
+          "load": 1.86,
+          "generate": 4.73
+        }
+      },
+      "environment": {
+        "python": "3.13.15",
+        "platform": "macOS-26.6.1-arm64-arm-64bit-Mach-O",
+        "machine": "arm64",
+        "torch": "2.15.0",
+        "transformers": "5.23.0",
+        "huggingface_hub": "2.4.0",
+        "tokenizers": "0.23.3",
+        "safetensors": "0.8.0",
+        "device": "cpu",
+        "torch_threads": 4,
+        "HF_HUB_OFFLINE": "1"
+      },
+      "note": "Answer without retrieval: no sources were given to the model, so a missing citation is not an error. Bracketed IDs in this answer, if any, were not checked against any source."
+    },
+    {
+      "name": "no_hit",
+      "command": "HF_HUB_OFFLINE=1 .venv/bin/python coach.py --question 'How do I bake sourdough bread?'",
+      "exit_code": 0,
+      "question": "How do I bake sourdough bread?",
+      "mode": "rag",
+      "status": "abstained",
+      "answer": null,
+      "sources": [],
+      "messages": null,
+      "citations": [],
+      "checks": [
+        {
+          "check": "knowledge search found a section",
+          "passed": false
+        }
+      ],
+      "generator_called": false,
+      "generation": null,
+      "environment": null,
+      "note": "No section of the game's knowledge files matches this question, so the coach did not ask the model. This refusal is a rule of the program, not an answer from the model."
+    }
+  ]
+}
